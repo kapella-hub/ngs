@@ -1,0 +1,134 @@
+version: "3.9"
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: ngs-postgres
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-ngs}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-ngs_dev_password}
+      POSTGRES_DB: ${POSTGRES_DB:-ngs}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./migrations:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-ngs}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - ngs-network
+
+  ngs-api:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: ngs-api
+    environment:
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-ngs}:${POSTGRES_PASSWORD:-ngs_dev_password}@postgres:5432/${POSTGRES_DB:-ngs}
+      - REDIS_URL=redis://redis:6379/0
+      - RAG_ENDPOINT=${RAG_ENDPOINT:-http://rag-mock:8080/enrich}
+      - RAG_ENABLED=${RAG_ENABLED:-true}
+      - RAG_TIMEOUT_SECONDS=${RAG_TIMEOUT_SECONDS:-30}
+      - JWT_SECRET=${JWT_SECRET:-dev_jwt_secret_change_in_production}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - CORS_ORIGINS=${CORS_ORIGINS:-http://localhost:3000,http://localhost:5173}
+    ports:
+      - "${API_PORT:-8000}:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    networks:
+      - ngs-network
+    restart: unless-stopped
+
+  ngs-worker:
+    build:
+      context: ./worker
+      dockerfile: Dockerfile
+    container_name: ngs-worker
+    environment:
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-ngs}:${POSTGRES_PASSWORD:-ngs_dev_password}@postgres:5432/${POSTGRES_DB:-ngs}
+      - REDIS_URL=redis://redis:6379/0
+      - RAG_ENDPOINT=${RAG_ENDPOINT:-http://rag-mock:8080/enrich}
+      - RAG_ENABLED=${RAG_ENABLED:-true}
+      - RAG_TIMEOUT_SECONDS=${RAG_TIMEOUT_SECONDS:-30}
+      - IMAP_HOST=${IMAP_HOST}
+      - IMAP_PORT=${IMAP_PORT:-993}
+      - IMAP_SSL=${IMAP_SSL:-true}
+      - IMAP_USER=${IMAP_USER}
+      - IMAP_PASSWORD=${IMAP_PASSWORD}
+      - IMAP_FOLDERS=${IMAP_FOLDERS:-INBOX,OP5,XYMON,Splunk,MAINTENANCE}
+      - IMAP_POLL_INTERVAL_SECONDS=${IMAP_POLL_INTERVAL_SECONDS:-60}
+      - IMAP_INITIAL_BACKFILL_DAYS=${IMAP_INITIAL_BACKFILL_DAYS:-7}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - REDACTION_PATTERNS=${REDACTION_PATTERNS:-}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./configs:/app/configs:ro
+    networks:
+      - ngs-network
+    restart: unless-stopped
+
+  ngs-frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        - VITE_API_URL=${VITE_API_URL:-http://localhost:8000}
+    container_name: ngs-frontend
+    ports:
+      - "${FRONTEND_PORT:-3000}:80"
+    depends_on:
+      - ngs-api
+    networks:
+      - ngs-network
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    container_name: ngs-redis
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - ngs-network
+
+  rag-mock:
+    build:
+      context: ./rag-mock
+      dockerfile: Dockerfile
+    container_name: ngs-rag-mock
+    ports:
+      - "${RAG_MOCK_PORT:-8080}:8080"
+    networks:
+      - ngs-network
+    profiles:
+      - dev
+
+networks:
+  ngs-network:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  redis_data:

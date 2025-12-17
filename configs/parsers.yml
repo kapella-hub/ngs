@@ -1,0 +1,209 @@
+# =============================================================================
+# NGS (NoiseGate Service) - Alert Parser Configuration
+# =============================================================================
+# This file defines parsing rules for different alert sources.
+# The parser extracts structured data from raw email alerts.
+
+parsers:
+  # OP5 Monitor / Naemon / Nagios-compatible alerts
+  op5:
+    name: "OP5 Monitor"
+    description: "Parser for OP5/Naemon/Nagios-style alerts"
+    subject_pattern: '\*\*\s*(?P<state>PROBLEM|RECOVERY|ACKNOWLEDGEMENT)\*\*.*Host:\s*(?P<host>\S+)'
+    body_patterns:
+      - 'Service:\s*(?P<service>.+?)(?:\n|$)'
+      - 'State:\s*(?P<severity>CRITICAL|WARNING|OK|UNKNOWN)'
+      - 'Additional Info:\s*(?P<info>.+?)(?:\n|$)'
+      - 'Address:\s*(?P<address>\S+)'
+      - 'Date/Time:\s*(?P<datetime>.+?)(?:\n|$)'
+    severity_map:
+      CRITICAL: critical
+      WARNING: medium
+      OK: info
+      UNKNOWN: low
+
+  # Nagios Core
+  nagios:
+    name: "Nagios"
+    description: "Standard Nagios notification format"
+    subject_pattern: '\*\*\s*(?P<state>PROBLEM|RECOVERY)\*\*.*Host:\s*(?P<host>\S+)'
+    body_patterns:
+      - 'Service:\s*(?P<service>.+?)(?:\n|$)'
+      - 'State:\s*(?P<severity>CRITICAL|WARNING|OK|UNKNOWN)'
+      - 'Output:\s*(?P<info>.+?)(?:\n|$)'
+    severity_map:
+      CRITICAL: critical
+      WARNING: medium
+      OK: info
+      UNKNOWN: low
+
+  # Xymon / Hobbit
+  xymon:
+    name: "Xymon"
+    description: "Xymon/Hobbit monitoring alerts"
+    subject_pattern: '(?P<host>\S+)\.(?P<service>\S+)\s+(?P<severity>red|yellow|green|clear|purple)'
+    body_patterns:
+      - 'Status:\s*(?P<status_detail>.+?)(?:\n|$)'
+    severity_map:
+      red: critical
+      purple: high
+      yellow: medium
+      clear: info
+      green: info
+
+  # Splunk Alerts
+  splunk:
+    name: "Splunk Alert"
+    description: "Splunk scheduled search alerts"
+    subject_pattern: 'Splunk Alert:\s*(?P<alert_name>.+)'
+    body_patterns:
+      - 'host=(?P<host>\S+)'
+      - 'severity=(?P<severity>\w+)'
+      - 'source=(?P<source>\S+)'
+      - 'index=(?P<index>\S+)'
+      - 'count=(?P<count>\d+)'
+    severity_map:
+      critical: critical
+      high: high
+      medium: medium
+      low: low
+      info: info
+
+  # Prometheus AlertManager
+  prometheus:
+    name: "Prometheus AlertManager"
+    description: "Prometheus AlertManager notifications"
+    subject_pattern: '\[(?P<state>FIRING|RESOLVED)\](?:\s+\[\d+\])?\s*(?P<alert_name>.+)'
+    body_patterns:
+      - 'alertname:\s*(?P<check_name>\S+)'
+      - 'instance:\s*(?P<host>\S+)'
+      - 'severity:\s*(?P<severity>\w+)'
+      - 'job:\s*(?P<job>\S+)'
+      - 'namespace:\s*(?P<namespace>\S+)'
+      - 'pod:\s*(?P<pod>\S+)'
+    severity_map:
+      critical: critical
+      warning: medium
+      info: info
+
+  # Zabbix
+  zabbix:
+    name: "Zabbix"
+    description: "Zabbix monitoring alerts"
+    subject_pattern: '(?P<state>PROBLEM|OK):\s*(?P<trigger>.+)'
+    body_patterns:
+      - 'Host:\s*(?P<host>\S+)'
+      - 'Severity:\s*(?P<severity>\w+)'
+      - 'Problem name:\s*(?P<problem_name>.+?)(?:\n|$)'
+      - 'Operational data:\s*(?P<op_data>.+?)(?:\n|$)'
+    severity_map:
+      Disaster: critical
+      High: high
+      Average: medium
+      Warning: medium
+      Information: info
+      Not classified: low
+
+  # Datadog
+  datadog:
+    name: "Datadog"
+    description: "Datadog monitoring alerts"
+    subject_pattern: '\[(?P<severity>Alert|Warn|No Data)\]\s*(?P<alert_name>.+)'
+    body_patterns:
+      - 'Host:\s*(?P<host>\S+)'
+      - 'Tags:\s*(?P<tags>.+?)(?:\n|$)'
+      - 'Metric:\s*(?P<metric>\S+)'
+    severity_map:
+      Alert: critical
+      Warn: medium
+      No Data: low
+
+  # PagerDuty
+  pagerduty:
+    name: "PagerDuty"
+    description: "PagerDuty incident notifications"
+    subject_pattern: '\[(?P<state>Triggered|Resolved|Acknowledged)\]\s*(?P<incident_title>.+)'
+    body_patterns:
+      - 'Service:\s*(?P<service>.+?)(?:\n|$)'
+      - 'Urgency:\s*(?P<severity>\w+)'
+
+  # Generic fallback
+  generic:
+    name: "Generic Alert"
+    description: "Fallback parser for unrecognized formats"
+    subject_pattern: '(?P<subject>.+)'
+    body_patterns: []
+
+# =============================================================================
+# Fingerprint Configuration
+# =============================================================================
+# Controls how alerts are grouped into incidents
+
+fingerprint:
+  # Fields used to compute fingerprint (in order)
+  components:
+    - environment
+    - host
+    - check_name
+    - normalized_signature
+
+  # Signature normalization settings
+  normalization:
+    # Convert to lowercase
+    lowercase: true
+
+    # Patterns to replace with placeholders
+    replacements:
+      # UUIDs
+      - pattern: '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}'
+        replacement: '<uuid>'
+
+      # Request/trace IDs
+      - pattern: '(request[_-]?id|req[_-]?id|trace[_-]?id|correlation[_-]?id)[=:]\s*\S+'
+        replacement: '<id>'
+
+      # ISO timestamps
+      - pattern: '\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}(\.\d+)?Z?'
+        replacement: '<ts>'
+
+      # Common date formats
+      - pattern: '\d{1,2}[/-]\d{1,2}[/-]\d{2,4}\s+\d{1,2}:\d{2}(:\d{2})?'
+        replacement: '<ts>'
+
+      # Unix timestamps
+      - pattern: '\b\d{10,13}\b'
+        replacement: '<ts>'
+
+      # Process IDs, ports, counts
+      - pattern: '(pid|port|count|duration|latency|size|bytes)[=:]\s*\d+'
+        replacement: '\1=<n>'
+
+      # IP addresses (optional - uncomment to mask)
+      # - pattern: '\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}'
+      #   replacement: '<ip>'
+
+    # Max length of signature to use
+    max_length: 500
+
+# =============================================================================
+# Tag Extraction
+# =============================================================================
+# Patterns to automatically extract tags from alert content
+
+tags:
+  patterns:
+    # Explicit tags
+    - pattern: 'tags?[=:]\s*([^\s,;]+)'
+      tag_prefix: ''
+
+    # Environment detection
+    - pattern: '\b(prod|production|staging|stage|dev|development|test|qa|uat)\b'
+      tag_prefix: 'env:'
+
+    # Region detection
+    - pattern: '\b(us-east|us-west|eu-west|eu-central|ap-southeast|ap-northeast)\b'
+      tag_prefix: 'region:'
+
+    # Kubernetes namespace
+    - pattern: 'namespace[=:]\s*(\S+)'
+      tag_prefix: 'k8s:'

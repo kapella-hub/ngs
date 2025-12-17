@@ -1,0 +1,154 @@
+# =============================================================================
+# NGS (NoiseGate Service) - Correlation Configuration
+# =============================================================================
+# Controls how alerts are deduplicated and correlated into incidents
+
+# =============================================================================
+# Deduplication Settings
+# =============================================================================
+deduplication:
+  # Time window for deduplication (in minutes)
+  # Events with same fingerprint within this window are marked as duplicates
+  window_minutes: 10
+
+  # Maximum events to keep per incident before archiving older ones
+  max_events_per_incident: 1000
+
+  # Whether to count deduplicated events toward event_count
+  count_duplicates: true
+
+# =============================================================================
+# Incident Correlation
+# =============================================================================
+correlation:
+  # Only one open incident per fingerprint
+  # When false, allows multiple open incidents with same fingerprint
+  single_open_per_fingerprint: true
+
+  # Minimum time between state changes to avoid flapping
+  flap_detection:
+    enabled: true
+    quiet_time_minutes: 30
+    max_flaps_before_suppress: 5
+
+  # Auto-resolve incidents with no new events
+  auto_resolve:
+    enabled: true
+    hours_without_events: 24
+
+  # Severity escalation rules
+  severity:
+    # Incident severity = max of recent events
+    escalate_to_max: true
+
+    # Time window to consider for severity calculation
+    escalation_window_minutes: 60
+
+    # Only escalate, never downgrade (unless resolved)
+    escalate_only: true
+
+# =============================================================================
+# Status Transitions
+# =============================================================================
+status_transitions:
+  # Allowed transitions for each status
+  open:
+    - acknowledged
+    - resolved
+    - suppressed
+
+  acknowledged:
+    - resolved
+    - suppressed
+    - open  # Can revert if more events arrive
+
+  resolved:
+    - open  # Reopens if new firing event arrives
+
+  suppressed:
+    - open
+    - acknowledged
+    - resolved
+
+# =============================================================================
+# Routing Rules
+# =============================================================================
+# Rules for automatic assignment and labeling
+
+routing:
+  rules:
+    # Example: Route database alerts to DBA team
+    - name: "Database Alerts"
+      conditions:
+        - field: check_name
+          operator: contains
+          value: ["mysql", "postgres", "redis", "mongodb"]
+        - field: source_tool
+          operator: in
+          value: ["op5", "prometheus"]
+      actions:
+        owner_team: "DBA Team"
+        labels:
+          category: database
+
+    # Example: Route network alerts to NOC
+    - name: "Network Alerts"
+      conditions:
+        - field: check_name
+          operator: contains
+          value: ["network", "dns", "ping", "connectivity"]
+      actions:
+        owner_team: "NOC"
+        labels:
+          category: network
+
+    # Example: Route Kubernetes alerts
+    - name: "Kubernetes Alerts"
+      conditions:
+        - field: source_tool
+          operator: equals
+          value: prometheus
+        - field: tags
+          operator: contains
+          value: "k8s:"
+      actions:
+        owner_team: "Platform Team"
+        labels:
+          category: kubernetes
+          platform: k8s
+
+# =============================================================================
+# Priority Scoring
+# =============================================================================
+# Score calculation for incident prioritization
+
+priority:
+  # Base score by severity
+  severity_scores:
+    critical: 100
+    high: 75
+    medium: 50
+    low: 25
+    info: 10
+
+  # Multipliers
+  multipliers:
+    # Production environment
+    production: 2.0
+    staging: 1.0
+    development: 0.5
+
+    # High event count indicates widespread issue
+    high_event_count:  # > 10 events
+      threshold: 10
+      multiplier: 1.5
+
+    # Repeated incidents (flapping)
+    flapping:
+      threshold: 3
+      multiplier: 1.25
+
+  # Time decay - reduce priority as incident ages without activity
+  time_decay:
+    enabled: true
+    half_life_hours: 24

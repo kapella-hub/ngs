@@ -1,0 +1,204 @@
+# =============================================================================
+# NGS (NoiseGate Service) - Maintenance Window Configuration
+# =============================================================================
+# Controls maintenance window detection and behavior
+
+# =============================================================================
+# Email Detection Patterns
+# =============================================================================
+# How to identify maintenance window notifications from emails
+
+detection:
+  # Subject line patterns that indicate maintenance
+  subject_prefixes:
+    - "[MW]"
+    - "[Maintenance]"
+    - "Maintenance:"
+    - "MAINTENANCE:"
+    - "Scheduled Maintenance"
+    - "Planned Outage"
+    - "Change Request:"
+    - "[CR]"
+
+  # Keywords in body that indicate maintenance
+  body_keywords:
+    - "maintenance window"
+    - "scheduled maintenance"
+    - "planned outage"
+    - "change request"
+    - "service window"
+    - "downtime notification"
+
+  # Patterns to extract data from email body
+  body_patterns:
+    scope: 'Scope:\s*(.+?)(?:\n|$)'
+    mode: 'Mode:\s*(mute|downgrade|digest)'
+    title: 'Title:\s*(.+?)(?:\n|$)'
+    start: 'Start:\s*(.+?)(?:\n|$)'
+    end: 'End:\s*(.+?)(?:\n|$)'
+    timezone: 'Timezone:\s*(.+?)(?:\n|$)'
+    reason: 'Reason:\s*(.+?)(?:\n|$)'
+    ticket: '(?:Ticket|CR|Change)[#:\s]*(\S+)'
+
+  # Patterns to extract scope details
+  scope_patterns:
+    host: 'host[s]?=([^;]+)'
+    service: 'service[s]?=([^;]+)'
+    env: 'env(?:ironment)?=([^;]+)'
+    region: 'region=([^;]+)'
+    tags: 'tags?=([^;]+)'
+    app: 'app(?:lication)?=([^;]+)'
+
+# =============================================================================
+# ICS Calendar Parsing
+# =============================================================================
+# Settings for parsing Outlook/ICS calendar invites
+
+ics_parsing:
+  enabled: true
+
+  # Fields to extract from ICS events
+  field_mapping:
+    title: SUMMARY
+    description: DESCRIPTION
+    start: DTSTART
+    end: DTEND
+    organizer: ORGANIZER
+    uid: UID
+    recurrence: RRULE
+
+  # Look for scope in these ICS fields
+  scope_search_fields:
+    - DESCRIPTION
+    - X-ALT-DESC
+
+  # NGS marker to identify maintenance windows we created
+  # Embed this in event body for reconciliation
+  ngs_marker: "NGS-MW:"
+
+# =============================================================================
+# Suppression Modes
+# =============================================================================
+# Behavior when an incident matches a maintenance window
+
+suppress_modes:
+  # Mute: Suppress all notifications, still store events
+  mute:
+    store_events: true
+    send_notifications: false
+    show_in_dashboard: true
+    show_in_reports: true
+
+  # Downgrade: Lower severity for routing purposes
+  downgrade:
+    store_events: true
+    send_notifications: true
+    severity_reduction: 2  # Levels to reduce (critical -> medium)
+    show_in_dashboard: true
+    show_in_reports: true
+
+  # Digest: Only include in periodic digest, no real-time notifications
+  digest:
+    store_events: true
+    send_notifications: false  # Real-time
+    send_digest: true
+    digest_interval_minutes: 60
+    show_in_dashboard: true
+    show_in_reports: true
+
+# =============================================================================
+# Scope Matching
+# =============================================================================
+# How maintenance scopes are matched to incidents
+
+scope_matching:
+  # Match all if scope is empty
+  empty_scope_matches_all: true
+
+  # Case sensitivity for matching
+  case_sensitive: false
+
+  # Wildcard support in patterns
+  wildcards:
+    enabled: true
+    any_char: "?"
+    any_string: "*"
+
+  # Regex support (more powerful but slower)
+  regex:
+    enabled: true
+    field_suffix: "_regex"  # e.g., host_regex
+
+  # Fields to match
+  match_fields:
+    - hosts
+    - services
+    - environments
+    - regions
+    - tags
+    - check_names
+
+# =============================================================================
+# Microsoft Graph Calendar Integration (Phase 2)
+# =============================================================================
+# Placeholder configuration for Outlook/Exchange calendar integration
+
+graph_calendar:
+  enabled: false
+
+  # Calendar to read maintenance windows from
+  calendar_id: ""  # Will be set via env var GRAPH_CALENDAR_ID
+
+  # Create NGS maintenance windows in this calendar
+  write_enabled: false
+
+  # Sync interval
+  sync_interval_minutes: 15
+
+  # Categories/colors to look for
+  maintenance_categories:
+    - "Maintenance"
+    - "Planned Outage"
+    - "Change Window"
+
+  # Required attendee patterns (emails/groups that must be invited)
+  required_attendees: []
+
+# =============================================================================
+# Auto-create Rules
+# =============================================================================
+# Automatically create maintenance windows based on patterns
+
+auto_create:
+  enabled: false
+
+  rules:
+    # Example: Weekly patch window
+    - name: "Weekly Patch Window"
+      schedule:
+        cron: "0 2 * * SUN"  # 2 AM every Sunday
+        duration_hours: 4
+        timezone: "UTC"
+      scope:
+        tags: ["patch-group-1"]
+      suppress_mode: mute
+      reason: "Weekly automated patching"
+
+# =============================================================================
+# UI Configuration
+# =============================================================================
+ui:
+  # Default view for maintenance page
+  default_view: "list"  # list, calendar
+
+  # Calendar view settings
+  calendar:
+    default_range: "week"  # day, week, month
+    show_past_days: 7
+    show_future_days: 30
+
+  # Maintenance window colors by mode
+  colors:
+    mute: "#3B82F6"      # Blue
+    downgrade: "#F59E0B"  # Amber
+    digest: "#8B5CF6"     # Purple
