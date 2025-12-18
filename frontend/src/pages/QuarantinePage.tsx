@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Dialog } from '@headlessui/react'
-import { ArrowPathIcon, TrashIcon, EnvelopeIcon } from '@heroicons/react/24/outline'
+import { ArrowPathIcon, EnvelopeIcon } from '@heroicons/react/24/outline'
 import { formatDistanceToNow, format } from 'date-fns'
 import toast from 'react-hot-toast'
 import { quarantineApi } from '../api/client'

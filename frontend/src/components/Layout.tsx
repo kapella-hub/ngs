@@ -3,7 +3,6 @@ import { Outlet, NavLink, useNavigate } from 'react-router-dom'
 import { Dialog, Menu, Transition } from '@headlessui/react'
 import {
   Bars3Icon,
-  XMarkIcon,
   HomeIcon,
   ExclamationTriangleIcon,
   CalendarIcon,

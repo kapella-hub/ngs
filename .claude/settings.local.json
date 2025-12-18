@@ -4,7 +4,8 @@
       "Bash(test:*)",
       "Bash(npm install:*)",
       "Bash(docker-compose:*)",
-      "Bash(docker info:*)"
+      "Bash(docker info:*)",
+      "Bash(docker version:*)"
     ],
     "deny": [],
     "ask": []

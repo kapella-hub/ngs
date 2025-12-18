@@ -10,7 +10,6 @@ import {
   ChatBubbleLeftIcon,
   SparklesIcon,
   EnvelopeIcon,
-  ClockIcon,
   WrenchScrewdriverIcon,
 } from '@heroicons/react/24/outline'
 import { formatDistanceToNow, format } from 'date-fns'
@@ -231,7 +230,7 @@ export default function IncidentDetailPage() {
                 <div className="mb-4">
                   <h3 className="text-sm font-medium text-gray-700 mb-2">Recommended Checks</h3>
                   <ul className="list-disc list-inside text-sm text-gray-600 space-y-1">
-                    {incident.ai_recommended_checks.map((check, i) => (
+                    {incident.ai_recommended_checks.map((check: string, i: number) => (
                       <li key={i}>{check}</li>
                     ))}
                   </ul>
@@ -242,7 +241,7 @@ export default function IncidentDetailPage() {
                 <div className="mb-4">
                   <h3 className="text-sm font-medium text-gray-700 mb-2">Suggested Runbooks</h3>
                   <ul className="space-y-1">
-                    {incident.ai_suggested_runbooks.map((rb, i) => (
+                    {incident.ai_suggested_runbooks.map((rb: { title: string; url?: string }, i: number) => (
                       <li key={i}>
                         {rb.url ? (
                           <a href={rb.url} target="_blank" rel="noopener noreferrer" className="text-sm text-primary-600 hover:underline">
@@ -261,7 +260,7 @@ export default function IncidentDetailPage() {
                 <div className="mb-4">
                   <h3 className="text-sm font-medium text-gray-700 mb-2">Safe Actions (Not Executed)</h3>
                   <ul className="list-disc list-inside text-sm text-gray-600 space-y-1">
-                    {incident.ai_safe_actions.map((action, i) => (
+                    {incident.ai_safe_actions.map((action: string, i: number) => (
                       <li key={i}>{action}</li>
                     ))}
                   </ul>

@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Dialog } from '@headlessui/react'
-import { PlusIcon, CalendarIcon, TrashIcon } from '@heroicons/react/24/outline'
+import { PlusIcon, TrashIcon } from '@heroicons/react/24/outline'
 import { format, formatDistanceToNow } from 'date-fns'
 import toast from 'react-hot-toast'
 import { maintenanceApi } from '../api/client'
