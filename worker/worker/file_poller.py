@@ -172,10 +172,15 @@ class FilePoller:
 
     async def _store_email(self, data: dict, folder: str, filename: str) -> Optional[str]:
         """Store email data in database."""
+        import json
         pool = await get_pool()
 
         # Use filename hash as UID
         uid = abs(hash(filename)) % (2**31)
+
+        # Serialize JSON fields
+        headers_json = json.dumps(data.get("headers", {}))
+        attachments_json = json.dumps(data.get("attachments", []))
 
         async with pool.acquire() as conn:
             result = await conn.fetchrow(
@@ -185,15 +190,15 @@ class FilePoller:
                     cc_addresses, date_header, headers, body_text, body_html,
                     attachments, parse_status
                 )
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, 'pending')
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, $10, $11, $12::jsonb, 'pending')
                 ON CONFLICT (folder, uid) DO NOTHING
                 RETURNING id
                 """,
                 folder, uid, data.get("message_id"), data.get("subject"),
                 data.get("from_address"), data.get("to_addresses", []),
                 data.get("cc_addresses", []), data.get("date_header"),
-                data.get("headers", {}), data.get("body_text"),
-                data.get("body_html"), data.get("attachments", [])
+                headers_json, data.get("body_text"),
+                data.get("body_html"), attachments_json
             )
 
             if result:
