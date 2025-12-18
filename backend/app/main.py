@@ -32,11 +32,48 @@ REQUEST_LATENCY = Histogram(
 )
 
 
+async def seed_admin_user():
+    """Ensure default admin user exists."""
+    from passlib.context import CryptContext
+    from app.database import get_db_pool
+
+    pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+    pool = await get_db_pool()
+
+    async with pool.acquire() as conn:
+        # Check if admin exists
+        existing = await conn.fetchrow(
+            "SELECT id FROM users WHERE username = 'admin'"
+        )
+
+        if not existing:
+            # Create admin user with password "admin123"
+            password_hash = pwd_context.hash("admin123")
+            await conn.execute(
+                """
+                INSERT INTO users (username, email, password_hash, display_name, role)
+                VALUES ('admin', 'admin@ngs.local', $1, 'NGS Admin', 'admin')
+                ON CONFLICT (username) DO NOTHING
+                """,
+                password_hash
+            )
+            logger.info("Created default admin user (admin/admin123)")
+        else:
+            # Update password hash in case it was incorrect
+            password_hash = pwd_context.hash("admin123")
+            await conn.execute(
+                "UPDATE users SET password_hash = $1 WHERE username = 'admin'",
+                password_hash
+            )
+            logger.info("Admin user exists, password reset to default")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator:
     """Application lifespan handler."""
     logger.info("Starting NGS API server")
     await init_db()
+    await seed_admin_user()
     yield
     logger.info("Shutting down NGS API server")
     await close_db()
