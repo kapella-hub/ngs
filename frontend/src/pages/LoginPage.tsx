@@ -14,8 +14,8 @@ export default function LoginPage() {
   const loginMutation = useMutation({
     mutationFn: () => authApi.login(username, password),
     onSuccess: async (data) => {
-      // Get user info
-      const userResponse = await authApi.me()
+      // Get user info with the new token
+      const userResponse = await authApi.me(data.access_token)
       login(data.access_token, userResponse)
       toast.success('Logged in successfully')
       navigate('/dashboard')

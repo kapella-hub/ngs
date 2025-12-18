@@ -38,8 +38,9 @@ export const authApi = {
     return response.data
   },
 
-  me: async () => {
-    const response = await api.get('/auth/me')
+  me: async (token?: string) => {
+    const headers = token ? { Authorization: `Bearer ${token}` } : {}
+    const response = await api.get('/auth/me', { headers })
     return response.data
   },
 }
