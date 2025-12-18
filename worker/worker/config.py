@@ -14,7 +14,10 @@ class WorkerSettings(BaseSettings):
     # Redis
     redis_url: str = "redis://localhost:6379/0"
 
-    # IMAP Configuration
+    # Email Provider: "imap" or "graph"
+    email_provider: str = "imap"
+
+    # IMAP Configuration (when email_provider=imap)
     imap_host: str = ""
     imap_port: int = 993
     imap_ssl: bool = True
@@ -23,6 +26,13 @@ class WorkerSettings(BaseSettings):
     imap_folders: str = "INBOX"
     imap_poll_interval_seconds: int = 60
     imap_initial_backfill_days: int = 7
+
+    # Microsoft Graph Configuration (when email_provider=graph)
+    # For Office 365 / Outlook with OAuth 2.0
+    graph_tenant_id: str = ""
+    graph_client_id: str = ""
+    graph_client_secret: str = ""
+    graph_user_email: str = ""  # The mailbox to read from
 
     # RAG Integration
     rag_endpoint: str = "http://localhost:8080/enrich"

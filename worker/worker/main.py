@@ -47,8 +47,27 @@ class NGSWorker:
                 timeout=self.settings.rag_timeout_seconds
             )
 
-        # Initialize IMAP poller if configured
-        if self.settings.imap_host and self.settings.imap_user:
+        # Initialize email poller based on provider
+        if self.settings.email_provider == "graph":
+            # Microsoft Graph API for Office 365
+            if self.settings.graph_tenant_id and self.settings.graph_client_id:
+                from worker.graph_client import GraphEmailPoller
+                self.imap_poller = GraphEmailPoller(
+                    tenant_id=self.settings.graph_tenant_id,
+                    client_id=self.settings.graph_client_id,
+                    client_secret=self.settings.graph_client_secret,
+                    user_email=self.settings.graph_user_email,
+                    folders=self.settings.imap_folders_list,
+                    poll_interval=self.settings.imap_poll_interval_seconds,
+                    backfill_days=self.settings.imap_initial_backfill_days,
+                    correlator=self.correlator,
+                    maintenance_engine=self.maintenance_engine
+                )
+                logger.info("Using Microsoft Graph API for email access")
+            else:
+                logger.warning("Graph API not configured - running in demo mode")
+        elif self.settings.imap_host and self.settings.imap_user:
+            # Traditional IMAP
             self.imap_poller = IMAPPoller(
                 host=self.settings.imap_host,
                 port=self.settings.imap_port,
@@ -61,8 +80,9 @@ class NGSWorker:
                 correlator=self.correlator,
                 maintenance_engine=self.maintenance_engine
             )
+            logger.info("Using IMAP for email access")
         else:
-            logger.warning("IMAP not configured - running in demo mode")
+            logger.warning("Email access not configured - running in demo mode")
 
         # Initialize scheduler for periodic tasks
         self.scheduler = Scheduler(
