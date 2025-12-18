@@ -62,8 +62,9 @@ services:
       - RAG_ENDPOINT=${RAG_ENDPOINT:-http://rag-mock:8080/enrich}
       - RAG_ENABLED=${RAG_ENABLED:-true}
       - RAG_TIMEOUT_SECONDS=${RAG_TIMEOUT_SECONDS:-30}
-      # Email provider: "imap" or "graph"
-      - EMAIL_PROVIDER=${EMAIL_PROVIDER:-imap}
+      # Email provider: "file", "imap", "graph", or "outlook"
+      - EMAIL_PROVIDER=${EMAIL_PROVIDER:-file}
+      - FILE_WATCH_PATH=/app/watch
       # IMAP settings (when EMAIL_PROVIDER=imap)
       - IMAP_HOST=${IMAP_HOST}
       - IMAP_PORT=${IMAP_PORT:-993}
@@ -88,6 +89,7 @@ services:
         condition: service_healthy
     volumes:
       - ./configs:/app/configs:ro
+      - ./watch:/app/watch
     networks:
       - ngs-network
     restart: unless-stopped
