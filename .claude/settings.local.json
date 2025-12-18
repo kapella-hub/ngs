@@ -1,7 +1,10 @@
 {
   "permissions": {
     "allow": [
-      "Bash(test:*)"
+      "Bash(test:*)",
+      "Bash(npm install:*)",
+      "Bash(docker-compose:*)",
+      "Bash(docker info:*)"
     ],
     "deny": [],
     "ask": []
