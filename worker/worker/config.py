@@ -34,6 +34,14 @@ class WorkerSettings(BaseSettings):
     graph_client_secret: str = ""
     graph_user_email: str = ""  # The mailbox to read from
 
+    # File-based Configuration (when email_provider=file)
+    # For local testing - watch a folder for .eml/.msg files
+    file_watch_path: str = "./watch"
+
+    # Outlook COM Configuration (when email_provider=outlook)
+    # For Windows local testing - read directly from Outlook desktop
+    outlook_folders: str = "Inbox"  # Comma-separated Outlook folder names
+
     # RAG Integration
     rag_endpoint: str = "http://localhost:8080/enrich"
     rag_enabled: bool = True

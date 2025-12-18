@@ -48,7 +48,9 @@ class NGSWorker:
             )
 
         # Initialize email poller based on provider
-        if self.settings.email_provider == "graph":
+        provider = self.settings.email_provider.lower()
+
+        if provider == "graph":
             # Microsoft Graph API for Office 365
             if self.settings.graph_tenant_id and self.settings.graph_client_id:
                 from worker.graph_client import GraphEmailPoller
@@ -66,7 +68,43 @@ class NGSWorker:
                 logger.info("Using Microsoft Graph API for email access")
             else:
                 logger.warning("Graph API not configured - running in demo mode")
-        elif self.settings.imap_host and self.settings.imap_user:
+
+        elif provider == "file":
+            # File-based poller - watch folder for .eml/.msg files
+            from worker.file_poller import FilePoller
+            self.imap_poller = FilePoller(
+                watch_path=self.settings.file_watch_path,
+                poll_interval=self.settings.imap_poll_interval_seconds,
+                correlator=self.correlator,
+                maintenance_engine=self.maintenance_engine
+            )
+            logger.info("Using file-based poller", watch_path=self.settings.file_watch_path)
+            logger.info("Drop .eml or .msg files into the watch folder to process them")
+
+        elif provider == "outlook":
+            # Outlook COM automation (Windows only)
+            try:
+                from worker.outlook_poller import OutlookPoller
+                self.imap_poller = OutlookPoller(
+                    folders=self.settings.imap_folders_list,
+                    poll_interval=self.settings.imap_poll_interval_seconds,
+                    backfill_days=self.settings.imap_initial_backfill_days,
+                    correlator=self.correlator,
+                    maintenance_engine=self.maintenance_engine
+                )
+                logger.info("Using Outlook COM automation for email access")
+            except ImportError as e:
+                logger.error("Outlook COM not available (requires Windows + pywin32)", error=str(e))
+                logger.info("Falling back to file-based poller")
+                from worker.file_poller import FilePoller
+                self.imap_poller = FilePoller(
+                    watch_path=self.settings.file_watch_path,
+                    poll_interval=self.settings.imap_poll_interval_seconds,
+                    correlator=self.correlator,
+                    maintenance_engine=self.maintenance_engine
+                )
+
+        elif provider == "imap" and self.settings.imap_host and self.settings.imap_user:
             # Traditional IMAP
             self.imap_poller = IMAPPoller(
                 host=self.settings.imap_host,
@@ -81,6 +119,7 @@ class NGSWorker:
                 maintenance_engine=self.maintenance_engine
             )
             logger.info("Using IMAP for email access")
+
         else:
             logger.warning("Email access not configured - running in demo mode")
 

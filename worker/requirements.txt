@@ -13,3 +13,9 @@ pydantic==2.6.1
 pydantic-settings==2.1.0
 aiosmtplib==3.0.1
 aioimaplib==1.0.1
+
+# Optional: For .msg file support (Outlook format)
+extract-msg==0.48.4
+
+# Optional: For Windows Outlook COM automation (install manually on Windows)
+# pywin32==306
