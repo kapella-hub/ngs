@@ -52,17 +52,17 @@ async def seed_admin_user():
             await conn.execute(
                 """
                 INSERT INTO users (username, email, password_hash, display_name, role)
-                VALUES ('admin', 'admin@ngs.local', $1, 'NGS Admin', 'admin')
+                VALUES ('admin', 'admin@example.com', $1, 'NGS Admin', 'admin')
                 ON CONFLICT (username) DO NOTHING
                 """,
                 password_hash
             )
             logger.info("Created default admin user (admin/admin123)")
         else:
-            # Update password hash in case it was incorrect
+            # Update password hash and fix email if needed
             password_hash = pwd_context.hash("admin123")
             await conn.execute(
-                "UPDATE users SET password_hash = $1 WHERE username = 'admin'",
+                "UPDATE users SET password_hash = $1, email = 'admin@example.com' WHERE username = 'admin'",
                 password_hash
             )
             logger.info("Admin user exists, password reset to default")
