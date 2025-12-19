@@ -6,9 +6,14 @@ from pathlib import Path
 from sentence_transformers import SentenceTransformer
 
 
+# Default model configuration
+DEFAULT_MODEL_NAME = "sentence-transformers/all-MiniLM-L6-v2"
+DEFAULT_CACHE_DIR = "./models/sentence-transformers"
+
+
 def download_model(
-    model_name: str = "sentence-transformers/all-MiniLM-L6-v2",
-    cache_dir: str = "./models/sentence-transformers",
+    model_name: str = DEFAULT_MODEL_NAME,
+    cache_dir: str = DEFAULT_CACHE_DIR,
     proxy: str = None,
     verify_ssl: bool = True
 ):

@@ -155,7 +155,7 @@ services:
       - UPLOAD_DIR=/app/data/uploads
       - VECTOR_DB_DIR=/app/data/chroma
       - IMAGE_DIR=/app/data/images
-      - LLM_MODEL_PATH=/app/models/Phi-3.1-mini-4k-instruct-Q4_K_M.gguf
+      - LLM_MODEL_PATH=${LLM_MODEL_PATH:-/app/models/Phi-4-mini-instruct-Q4_K_M.gguf}
       - LLM_CONTEXT_SIZE=${LLM_CONTEXT_SIZE:-4096}
       - LLM_N_THREADS=${LLM_N_THREADS:-4}
       - LLM_N_GPU_LAYERS=${LLM_N_GPU_LAYERS:-0}
@@ -169,7 +169,7 @@ services:
       - "${RAG_PORT:-8001}:8001"
     volumes:
       - rag_data:/app/data
-      - rag_models:/app/models
+      - ./rag/models:/app/models
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
       interval: 30s
@@ -194,4 +194,3 @@ volumes:
   postgres_data:
   redis_data:
   rag_data:
-  rag_models:
