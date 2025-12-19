@@ -13,6 +13,8 @@ pydantic==2.6.1
 pydantic-settings==2.1.0
 aiosmtplib==3.0.1
 aioimaplib==1.0.1
+pytz==2024.1
+aiohttp==3.9.3
 
 # Optional: For .msg file support (Outlook format)
 extract-msg==0.48.4

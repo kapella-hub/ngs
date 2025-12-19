@@ -20,6 +20,32 @@ class QuarantinedEmail(RawEmailResponse):
     parse_error: Optional[str] = None
 
 
+@router.get("/stats", response_model=dict)
+async def get_quarantine_stats(
+    conn=Depends(get_db_connection),
+    current_user: dict = Depends(get_current_user)
+):
+    """Get quarantine statistics."""
+    stats = await conn.fetch(
+        """
+        SELECT folder, COUNT(*) as count, MAX(received_at) as latest
+        FROM raw_emails
+        WHERE parse_status IN ('failed', 'quarantine')
+        GROUP BY folder
+        ORDER BY count DESC
+        """
+    )
+
+    total = await conn.fetchval(
+        "SELECT COUNT(*) FROM raw_emails WHERE parse_status IN ('failed', 'quarantine')"
+    )
+
+    return {
+        "total": total,
+        "by_folder": [dict(s) for s in stats]
+    }
+
+
 @router.get("", response_model=PaginatedResponse[QuarantinedEmail])
 async def list_quarantined_emails(
     folder: Optional[str] = Query(None),
@@ -149,29 +175,3 @@ async def delete_quarantined_email(
         raise HTTPException(status_code=404, detail="Quarantined email not found")
 
     logger.info("Quarantined email deleted", email_id=str(email_id), by=current_user["username"])
-
-
-@router.get("/stats", response_model=dict)
-async def get_quarantine_stats(
-    conn=Depends(get_db_connection),
-    current_user: dict = Depends(get_current_user)
-):
-    """Get quarantine statistics."""
-    stats = await conn.fetch(
-        """
-        SELECT folder, COUNT(*) as count, MAX(received_at) as latest
-        FROM raw_emails
-        WHERE parse_status IN ('failed', 'quarantine')
-        GROUP BY folder
-        ORDER BY count DESC
-        """
-    )
-
-    total = await conn.fetchval(
-        "SELECT COUNT(*) FROM raw_emails WHERE parse_status IN ('failed', 'quarantine')"
-    )
-
-    return {
-        "total": total,
-        "by_folder": [dict(s) for s in stats]
-    }

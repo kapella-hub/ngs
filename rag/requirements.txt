@@ -1,0 +1,33 @@
+# Web framework
+fastapi==0.109.0
+uvicorn[standard]==0.27.0
+python-multipart==0.0.6
+
+# Configuration
+pydantic==2.5.3
+pydantic-settings==2.1.0
+python-dotenv==1.0.0
+
+# Local LLM
+llama-cpp-python>=0.3.16
+
+# Embeddings & Vector Store
+sentence-transformers==2.3.1
+chromadb==0.4.22
+
+# Document Processing
+pypdf==3.17.4
+python-docx==1.1.0
+python-pptx==0.6.23
+pandas==2.1.4
+openpyxl==3.1.2
+beautifulsoup4==4.12.3
+lxml==5.1.0
+
+# OCR
+pytesseract==0.3.10
+Pillow==10.2.0
+
+# Utilities
+numpy==1.26.3
+requests==2.31.0

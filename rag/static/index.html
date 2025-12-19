@@ -1,0 +1,534 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Local RAG System</title>
+    <!-- Markdown parser -->
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: #000000;
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        .header {
+            text-align: center;
+            color: white;
+            margin-bottom: 30px;
+        }
+
+        .header h1 {
+            font-size: 2.5rem;
+            margin-bottom: 10px;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.2);
+        }
+
+        .header p {
+            font-size: 1.1rem;
+            opacity: 0.9;
+        }
+
+        .stats-bar {
+            background: #1a1a1a;
+            border-radius: 12px;
+            padding: 15px 25px;
+            margin-bottom: 20px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .stat-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .stat-label {
+            color: #aaa;
+            font-size: 0.9rem;
+        }
+
+        .stat-value {
+            color: #4a9eff;
+            font-size: 1.5rem;
+            font-weight: bold;
+        }
+
+        .main-content {
+            margin-bottom: 20px;
+        }
+
+        .chat-section {
+            width: 100%;
+        }
+
+        .card {
+            background: #1a1a1a;
+            border-radius: 12px;
+            padding: 25px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+        }
+
+        .card h2 {
+            color: #ffffff;
+            margin-bottom: 20px;
+            font-size: 1.5rem;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .icon {
+            font-size: 1.8rem;
+        }
+
+        .btn-manage {
+            background: #4a9eff;
+            color: white;
+            text-decoration: none;
+            padding: 8px 20px;
+            border-radius: 8px;
+            font-size: 0.9rem;
+            cursor: pointer;
+            transition: transform 0.2s ease;
+            display: inline-block;
+        }
+
+        .btn-manage:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(74, 158, 255, 0.4);
+            background: #5ab0ff;
+        }
+
+        .btn-danger {
+            background: #ef4444;
+            color: white;
+            border: none;
+            padding: 8px 20px;
+            border-radius: 8px;
+            font-size: 0.9rem;
+            cursor: pointer;
+            transition: transform 0.2s ease;
+        }
+
+        .btn-danger:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(239, 68, 68, 0.4);
+            background: #dc2626;
+        }
+
+        .btn-danger:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        /* Chat Section */
+        .chat-container {
+            display: flex;
+            flex-direction: column;
+            min-height: 400px;
+            height: 600px;
+            max-height: 90vh;
+            resize: vertical;
+            overflow: hidden;
+        }
+
+        .messages {
+            flex: 1;
+            overflow-y: auto;
+            padding: 15px;
+            background: #0a0a0a;
+            border-radius: 8px;
+            margin-bottom: 15px;
+        }
+
+        .message {
+            margin-bottom: 15px;
+            padding: 12px 16px;
+            border-radius: 12px;
+            max-width: 85%;
+            word-wrap: break-word;
+        }
+
+        .message.user {
+            background: #4a9eff;
+            color: white;
+            margin-left: auto;
+            text-align: right;
+        }
+
+        .message.assistant {
+            background: #2a2a2a;
+            color: #fff;
+            border: 1px solid #3a3a3a;
+        }
+
+        .message .label {
+            font-size: 0.75rem;
+            opacity: 0.8;
+            margin-bottom: 5px;
+            font-weight: 600;
+        }
+
+        .message .content {
+            line-height: 1.6;
+        }
+
+        /* Markdown formatting styles */
+        .message .content p {
+            margin: 0.5em 0;
+        }
+
+        .message .content p:first-child {
+            margin-top: 0;
+        }
+
+        .message .content p:last-child {
+            margin-bottom: 0;
+        }
+
+        .message .content ul,
+        .message .content ol {
+            margin: 0.5em 0;
+            padding-left: 1.5em;
+        }
+
+        .message .content li {
+            margin: 0.3em 0;
+        }
+
+        .message .content strong {
+            font-weight: 600;
+            color: #fff;
+        }
+
+        .message.user .content strong {
+            color: #fff;
+        }
+
+        .message .content code {
+            background: rgba(255, 255, 255, 0.1);
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: 'Courier New', monospace;
+            font-size: 0.9em;
+        }
+
+        .message .content pre {
+            background: rgba(255, 255, 255, 0.1);
+            padding: 10px;
+            border-radius: 6px;
+            overflow-x: auto;
+            margin: 0.5em 0;
+        }
+
+        .message .content pre code {
+            background: none;
+            padding: 0;
+        }
+
+        /* Image display styles */
+        .message-images {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin-top: 12px;
+        }
+
+        .message-image {
+            max-width: 300px;
+            max-height: 300px;
+            border-radius: 8px;
+            border: 2px solid #3a3a3a;
+            cursor: pointer;
+            transition: transform 0.2s ease, border-color 0.2s ease;
+            object-fit: contain;
+            background: #1a1a1a;
+        }
+
+        .message-image:hover {
+            transform: scale(1.05);
+            border-color: #4a9eff;
+        }
+
+        .input-area {
+            display: flex;
+            gap: 10px;
+        }
+
+        .question-input {
+            flex: 1;
+            padding: 12px 16px;
+            border: 2px solid #3a3a3a;
+            border-radius: 8px;
+            font-size: 1rem;
+            font-family: inherit;
+            transition: border-color 0.3s ease;
+            background: #0a0a0a;
+            color: #fff;
+        }
+
+        .question-input:focus {
+            outline: none;
+            border-color: #4a9eff;
+        }
+
+        .send-btn {
+            padding: 12px 25px;
+            background: #4a9eff;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 1rem;
+            transition: transform 0.2s ease;
+        }
+
+        .send-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(74, 158, 255, 0.4);
+            background: #5ab0ff;
+        }
+
+        .send-btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .loading {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid rgba(255, 255, 255, 0.3);
+            border-radius: 50%;
+            border-top-color: white;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .empty-state {
+            text-align: center;
+            color: #666;
+            padding: 40px 20px;
+        }
+
+        .empty-state .icon {
+            font-size: 4rem;
+            margin-bottom: 15px;
+            opacity: 0.3;
+        }
+
+        /* Scrollbar Styles */
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: #f1f1f1;
+            border-radius: 4px;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: #667eea;
+            border-radius: 4px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: #764ba2;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="stats-bar">
+            <div class="stat-item">
+                <span class="stat-label">📚 Chunks Indexed:</span>
+                <span class="stat-value" id="docCount">-</span>
+            </div>
+            <div class="stat-item">
+                <span class="stat-label">Status:</span>
+                <span class="stat-value" id="systemStatus" style="font-size: 1rem;">●</span>
+            </div>
+            <div class="stat-item">
+                <a href="/manage" class="btn-manage">
+                    📁 Manage Documents
+                </a>
+            </div>
+        </div>
+
+        <div class="main-content">
+            <!-- Chat Section -->
+            <div class="card chat-section">
+                <h2><span class="icon">💬</span> Ask Questions</h2>
+                <div class="chat-container">
+                    <div class="messages" id="messages">
+                        <div class="empty-state">
+                            <div class="icon">💭</div>
+                            <p>Upload documents via "Manage Documents" and start asking questions!</p>
+                        </div>
+                    </div>
+                    <div class="input-area">
+                        <input type="text" 
+                               class="question-input" 
+                               id="questionInput" 
+                               placeholder="Ask a question about your documents..."
+                               onkeypress="handleKeyPress(event)">
+                        <button class="send-btn" id="sendBtn" onclick="askQuestion()">
+                            Send
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Load stats on page load
+        window.addEventListener('load', () => {
+            loadStats();
+            checkHealth();
+        });
+
+        // Health check
+        async function checkHealth() {
+            try {
+                const response = await fetch('/health');
+                const data = await response.json();
+                const statusEl = document.getElementById('systemStatus');
+                if (data.status === 'healthy') {
+                    statusEl.textContent = '🟢 Online';
+                    statusEl.style.color = '#10b981';
+                } else {
+                    statusEl.textContent = '🔴 Offline';
+                    statusEl.style.color = '#ef4444';
+                }
+            } catch (error) {
+                document.getElementById('systemStatus').textContent = '🔴 Offline';
+                document.getElementById('systemStatus').style.color = '#ef4444';
+            }
+        }
+
+        // Load collection stats
+        async function loadStats() {
+            try {
+                const response = await fetch('/stats');
+                const data = await response.json();
+                document.getElementById('docCount').textContent = data.document_count || 0;
+            } catch (error) {
+                console.error('Error loading stats:', error);
+                document.getElementById('docCount').textContent = 'Error';
+            }
+        }
+
+        // Ask question
+        async function askQuestion() {
+            const input = document.getElementById('questionInput');
+            const question = input.value.trim();
+
+            if (!question) return;
+
+            const messagesEl = document.getElementById('messages');
+            const sendBtn = document.getElementById('sendBtn');
+
+            // Remove empty state
+            const emptyState = messagesEl.querySelector('.empty-state');
+            if (emptyState) {
+                emptyState.remove();
+            }
+
+            // Add user message
+            addMessage('user', question);
+            input.value = '';
+            sendBtn.disabled = true;
+            sendBtn.innerHTML = '<span class="loading"></span>';
+
+            try {
+                const response = await fetch('/ask', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ query: question })
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    addMessage('assistant', data.answer, data.images || []);
+                } else {
+                    throw new Error(data.detail || 'Failed to get answer');
+                }
+            } catch (error) {
+                addMessage('assistant', `Error: ${error.message}`);
+            } finally {
+                sendBtn.disabled = false;
+                sendBtn.textContent = 'Send';
+            }
+        }
+
+        // Add message to chat
+        function addMessage(role, content, images = []) {
+            const messagesEl = document.getElementById('messages');
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `message ${role}`;
+            
+            const label = role === 'user' ? 'You' : 'Assistant';
+            
+            // Parse markdown for assistant messages
+            let displayContent = content;
+            if (role === 'assistant' && typeof marked !== 'undefined') {
+                displayContent = marked.parse(content);
+            }
+            
+            // Build images HTML if images are provided
+            let imagesHtml = '';
+            if (images && images.length > 0) {
+                imagesHtml = '<div class="message-images">';
+                images.forEach(imageUrl => {
+                    imagesHtml += `<img src="${imageUrl}" alt="Related image" class="message-image" onclick="window.open('${imageUrl}', '_blank')">`;
+                });
+                imagesHtml += '</div>';
+            }
+            
+            messageDiv.innerHTML = `
+                <div class="label">${label}</div>
+                <div class="content">${displayContent}</div>
+                ${imagesHtml}
+            `;
+
+            messagesEl.appendChild(messageDiv);
+            messagesEl.scrollTop = messagesEl.scrollHeight;
+        }
+
+        // Handle Enter key press
+        function handleKeyPress(event) {
+            if (event.key === 'Enter' && !event.shiftKey) {
+                event.preventDefault();
+                askQuestion();
+            }
+        }
+    </script>
+</body>
+</html>

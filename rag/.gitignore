@@ -1,0 +1,9 @@
+/models/*
+/.venv
+/data/chroma/*
+/data/images/*
+/data/uploads/*
+/docs
+/index_store/*
+/app/__pycache__
+.idea

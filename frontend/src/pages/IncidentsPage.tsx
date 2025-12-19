@@ -19,12 +19,15 @@ const statusOptions: IncidentStatus[] = ['open', 'acknowledged', 'resolved', 'su
 export default function IncidentsPage() {
   const [searchParams, setSearchParams] = useSearchParams()
   const [search, setSearch] = useState(searchParams.get('search') || '')
-  const [showFilters, setShowFilters] = useState(false)
 
   const page = parseInt(searchParams.get('page') || '1')
   const status = searchParams.getAll('status') as IncidentStatus[]
   const severity = searchParams.getAll('severity') as Severity[]
   const inMaintenance = searchParams.get('in_maintenance')
+
+  // Auto-expand filters when URL has filter params
+  const hasActiveFilters = status.length > 0 || severity.length > 0 || inMaintenance !== null
+  const [showFilters, setShowFilters] = useState(hasActiveFilters)
 
   const { data, isLoading } = useQuery({
     queryKey: ['incidents', { page, status, severity, search, inMaintenance }],
@@ -50,7 +53,10 @@ export default function IncidentsPage() {
         newParams.set(key, value)
       }
     }
-    newParams.set('page', '1')
+    // Only reset page to 1 when changing filters, not when changing page itself
+    if (key !== 'page') {
+      newParams.set('page', '1')
+    }
     setSearchParams(newParams)
   }
 
@@ -100,7 +106,24 @@ export default function IncidentsPage() {
           >
             <FunnelIcon className="h-5 w-5 mr-2" />
             Filters
+            {hasActiveFilters && (
+              <span className="ml-2 inline-flex items-center justify-center px-2 py-0.5 rounded-full text-xs font-medium bg-primary-600 text-white">
+                {status.length + severity.length + (inMaintenance ? 1 : 0)}
+              </span>
+            )}
           </button>
+          {hasActiveFilters && (
+            <button
+              onClick={() => {
+                const newParams = new URLSearchParams()
+                if (search) newParams.set('search', search)
+                setSearchParams(newParams)
+              }}
+              className="btn-secondary text-red-600 hover:text-red-700"
+            >
+              Clear Filters
+            </button>
+          )}
         </div>
 
         {showFilters && (

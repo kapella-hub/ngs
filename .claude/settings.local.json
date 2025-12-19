@@ -5,7 +5,17 @@
       "Bash(npm install:*)",
       "Bash(docker-compose:*)",
       "Bash(docker info:*)",
-      "Bash(docker version:*)"
+      "Bash(docker version:*)",
+      "Bash(docker exec:*)",
+      "Bash(docker logs:*)",
+      "Bash(timeout:*)",
+      "Bash(docker cp:*)",
+      "Bash(curl:*)",
+      "Bash(python3:*)",
+      "WebSearch",
+      "Bash(docker ps:*)",
+      "Bash(cat:*)",
+      "Bash(dir:*)"
     ],
     "deny": [],
     "ask": []

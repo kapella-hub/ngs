@@ -11,7 +11,9 @@ COPY . .
 
 # Build
 ARG VITE_API_URL=http://localhost:8000
+ARG VITE_RAG_URL=http://localhost:8001
 ENV VITE_API_URL=$VITE_API_URL
+ENV VITE_RAG_URL=$VITE_RAG_URL
 RUN npm run build
 
 # Production image

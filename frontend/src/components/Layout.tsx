@@ -10,6 +10,8 @@ import {
   Cog6ToothIcon,
   ArrowRightOnRectangleIcon,
   UserCircleIcon,
+  BookOpenIcon,
+  ChartBarIcon,
 } from '@heroicons/react/24/outline'
 import clsx from 'clsx'
 import { useAuthStore } from '../stores/auth'
@@ -17,8 +19,10 @@ import { useAuthStore } from '../stores/auth'
 const navigation = [
   { name: 'Dashboard', href: '/dashboard', icon: HomeIcon },
   { name: 'Incidents', href: '/incidents', icon: ExclamationTriangleIcon },
+  { name: 'History', href: '/history', icon: ChartBarIcon },
   { name: 'Maintenance', href: '/maintenance', icon: CalendarIcon },
   { name: 'Quarantine', href: '/quarantine', icon: ArchiveBoxIcon },
+  { name: 'Knowledge Base', href: '/knowledge', icon: BookOpenIcon },
   { name: 'Admin', href: '/admin', icon: Cog6ToothIcon },
 ]
 

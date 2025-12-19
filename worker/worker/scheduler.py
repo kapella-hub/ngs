@@ -1,11 +1,14 @@
 """Scheduler for periodic worker tasks."""
 import asyncio
 from typing import Optional
+from uuid import UUID
 
 import structlog
 
 from worker.correlator import Correlator
+from worker.database import get_pool
 from worker.maintenance_engine import MaintenanceEngine
+from worker.parser import EmailParser
 from worker.rag_client import RAGClient
 
 logger = structlog.get_logger()
@@ -23,6 +26,7 @@ class Scheduler:
         self.correlator = correlator
         self.maintenance_engine = maintenance_engine
         self.rag_client = rag_client
+        self.parser = EmailParser()
         self.running = False
 
     async def run(self):
@@ -50,6 +54,12 @@ class Scheduler:
 
     async def _run_periodic_tasks(self):
         """Run all periodic tasks."""
+        # Reprocess pending emails first
+        await self._safe_run(
+            "reprocess_pending",
+            self._reprocess_pending_emails
+        )
+
         # Auto-resolve stale incidents
         await self._safe_run(
             "auto_resolve",
@@ -97,3 +107,37 @@ class Scheduler:
                 )
             # Rate limit
             await asyncio.sleep(2)
+
+    async def _reprocess_pending_emails(self):
+        """Reprocess emails that are in pending status."""
+        pool = await get_pool()
+
+        async with pool.acquire() as conn:
+            # Get pending emails (limit batch size)
+            rows = await conn.fetch(
+                """
+                SELECT id, folder FROM raw_emails
+                WHERE parse_status = 'pending'
+                ORDER BY received_at DESC
+                LIMIT 200
+                """
+            )
+
+            if rows:
+                logger.info("Reprocessing pending emails", count=len(rows))
+
+            for row in rows:
+                email_id = str(row["id"])
+                folder = row["folder"]
+
+                try:
+                    parsed = await self.parser.parse_email(email_id, folder)
+                    if parsed:
+                        await self.correlator.process_event(parsed)
+                        logger.debug("Reprocessed email", email_id=email_id)
+                except Exception as e:
+                    logger.error(
+                        "Failed to reprocess email",
+                        email_id=email_id,
+                        error=str(e)
+                    )

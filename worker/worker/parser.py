@@ -1,5 +1,5 @@
 """Email parser for alert normalization."""
-import hashlib
+import os
 import re
 from datetime import datetime
 from typing import Any, Dict, List, Optional
@@ -9,8 +9,20 @@ import structlog
 import yaml
 
 from worker.database import get_pool
+from worker.fingerprint import (
+    compute_fingerprint_v2,
+    compute_fingerprint_v1,
+    compute_normalized_signature,
+)
 
 logger = structlog.get_logger()
+
+# Check if LLM parsing is enabled
+LLM_PARSING_ENABLED = os.environ.get("LLM_PARSING_ENABLED", "true").lower() == "true"
+
+# Import LLM parser if enabled
+if LLM_PARSING_ENABLED:
+    from worker.llm_parser import get_llm_parser
 
 
 class EmailParser:
@@ -21,18 +33,22 @@ class EmailParser:
         self._load_parsers()
 
     def _load_parsers(self):
-        """Load parser configurations from YAML."""
+        """Load parser configurations from YAML, merging with defaults."""
+        # Always load defaults first
+        self._load_default_parsers()
+
+        # Then try to load and merge config file parsers
         try:
             with open("/app/configs/parsers.yml", "r") as f:
                 config = yaml.safe_load(f)
-                self.parsers = config.get("parsers", {})
+                file_parsers = config.get("parsers", {})
+                # Merge file parsers on top of defaults (file takes priority for conflicts)
+                self.parsers.update(file_parsers)
             logger.info("Loaded parsers", count=len(self.parsers))
         except FileNotFoundError:
-            logger.warning("No parsers config found, using defaults")
-            self._load_default_parsers()
+            logger.info("No parsers config found, using defaults", count=len(self.parsers))
         except Exception as e:
-            logger.error("Failed to load parsers", error=str(e))
-            self._load_default_parsers()
+            logger.warning("Failed to load parsers config, using defaults", error=str(e))
 
     def _load_default_parsers(self):
         """Load default parser patterns."""
@@ -83,6 +99,20 @@ class EmailParser:
                     r"Severity:\s*(?P<severity>\w+)"
                 ]
             },
+            "xmatters": {
+                "name": "xMatters",
+                "subject_pattern": r"(?:Immediate assistance REQ[:\-]?\s*)(?P<location>[^-]*?)\s*-\s*(?P<ticket_number>INC\d+)",
+                "body_patterns": [
+                    r"Quick Description:(?:</strong>)?\s*(?P<check_name>[^<\r\n]+)",
+                    r"Ticket Number:(?:</strong>)?\s*(?P<incident_id>INC\d+)",
+                    r"(?:Severity|severity):(?:</strong>)?\s*(?P<severity>\w+)",
+                    r"Condition:(?:</strong>)?\s*(?P<condition>\w+)",
+                    r"Event Start Time:(?:</strong>)?\s*(?P<event_time>[^<\r\n]+)",
+                    r"City,?\s*State:(?:</strong>)?\s*(?P<location>[^<\r\n]+)",
+                    r"Escalated by:(?:</strong>)?\s*(?P<escalated_by>[^<\r\n]+)",
+                    r"Escalation Notes:(?:</strong>)?\s*(?P<notes>[^<\r\n]+)"
+                ]
+            },
             "generic": {
                 "name": "Generic Alert",
                 "subject_pattern": r"(?P<subject>.+)",
@@ -109,42 +139,92 @@ class EmailParser:
 
             subject = email_row["subject"] or ""
             body = email_row["body_text"] or email_row["body_html"] or ""
+            from_address = email_row["from_address"] or ""
 
-            # Determine source tool from folder name
-            source_tool = self._determine_source_tool(folder, subject, body)
+            # Try LLM learning parser first (if enabled)
+            llm_parsed = None
+            if LLM_PARSING_ENABLED:
+                try:
+                    llm_parser = await get_llm_parser()
+                    llm_parsed = await llm_parser.parse_email(
+                        email_id=email_id,
+                        subject=subject,
+                        from_address=from_address,
+                        body=body
+                    )
+                    logger.debug(
+                        "LLM parser result",
+                        email_id=email_id,
+                        extraction_type=llm_parsed.get("extraction_type"),
+                        source=llm_parsed.get("source_name")
+                    )
+                except Exception as e:
+                    logger.warning("LLM parser failed, falling back to regex", error=str(e))
+                    llm_parsed = None
 
-            # Get parser for this source
+            # Determine source tool - prefer LLM result, fall back to folder detection
+            if llm_parsed and llm_parsed.get("source_tool") and llm_parsed.get("source_tool") != "unknown":
+                source_tool = llm_parsed["source_tool"]
+            else:
+                source_tool = self._determine_source_tool(folder, subject, body, from_address)
+
+            # Get parser for this source (used as fallback or supplement)
             parser_config = self.parsers.get(source_tool.lower(), self.parsers.get("generic", {}))
 
             try:
-                # Parse using configured patterns
-                parsed = self._apply_parser(parser_config, subject, body)
+                # Parse using configured patterns (as fallback/supplement)
+                regex_parsed = self._apply_parser(parser_config, subject, body)
+
+                # Merge results: LLM takes priority, regex fills gaps
+                if llm_parsed:
+                    parsed = {
+                        "host": llm_parsed.get("host") or regex_parsed.get("host"),
+                        "service": llm_parsed.get("service") or regex_parsed.get("service") or regex_parsed.get("service_name"),
+                        "severity": llm_parsed.get("severity") or regex_parsed.get("severity") or regex_parsed.get("severity_text"),
+                        "state": llm_parsed.get("state") or regex_parsed.get("state") or regex_parsed.get("state_closed"),
+                        "summary": llm_parsed.get("summary") or regex_parsed.get("summary"),
+                        "check_name": regex_parsed.get("check_name") or llm_parsed.get("service"),
+                        "alert_name": regex_parsed.get("alert_name"),
+                        "trigger": regex_parsed.get("trigger"),
+                        "environment": regex_parsed.get("environment"),
+                        "region": regex_parsed.get("region"),
+                        "info": regex_parsed.get("info"),
+                        "source_name": llm_parsed.get("source_name"),
+                        "extraction_type": llm_parsed.get("extraction_type"),
+                        **{k: v for k, v in regex_parsed.items() if k not in ["host", "service", "severity", "state", "check_name", "summary"]}
+                    }
+                else:
+                    parsed = regex_parsed
 
                 # Build normalized event
                 event = {
                     "raw_email_id": email_id,
                     "source_tool": source_tool,
                     "host": parsed.get("host"),
-                    "check_name": parsed.get("check_name") or parsed.get("service") or parsed.get("trigger"),
-                    "service": parsed.get("service"),
-                    "severity": self._normalize_severity(parsed.get("severity")),
-                    "state": self._determine_state(parsed.get("state")),
+                    "check_name": parsed.get("check_name") or parsed.get("service") or parsed.get("service_name") or parsed.get("alert_name") or parsed.get("trigger"),
+                    "service": parsed.get("service") or parsed.get("service_name"),
+                    "severity": self._normalize_severity(parsed.get("severity") or parsed.get("severity_text") or parsed.get("severity_detail")),
+                    "state": self._determine_state(parsed.get("state") or parsed.get("state_closed")),
                     "environment": parsed.get("environment"),
                     "region": parsed.get("region"),
                     "occurred_at": email_row["date_header"] or datetime.utcnow(),
                     "payload": {
                         "subject": subject,
-                        "from": email_row["from_address"],
+                        "from": from_address,
+                        "summary": parsed.get("summary"),
                         "info": parsed.get("info"),
                         "alert_name": parsed.get("alert_name"),
-                        **{k: v for k, v in parsed.items() if k not in ["host", "check_name", "severity", "state"]}
+                        "source_name": parsed.get("source_name"),
+                        "extraction_type": parsed.get("extraction_type"),
+                        **{k: v for k, v in parsed.items() if k not in ["host", "check_name", "severity", "state", "source_name", "extraction_type", "summary"]}
                     },
                     "tags": self._extract_tags(subject, body, parsed)
                 }
 
-                # Compute fingerprint
-                event["normalized_signature"] = self._normalize_signature(subject, body)
-                event["fingerprint"] = self._compute_fingerprint(event)
+                # Compute fingerprints (v2 is primary, v1 for backwards compatibility)
+                event["normalized_signature"] = compute_normalized_signature(subject, body)
+                event["fingerprint_v2"] = compute_fingerprint_v2(event)
+                event["fingerprint"] = compute_fingerprint_v1(event)  # Legacy, for backwards compatibility
 
                 # Update email status
                 await conn.execute(
@@ -163,11 +243,18 @@ class EmailParser:
                 )
                 return None
 
-    def _determine_source_tool(self, folder: str, subject: str, body: str) -> str:
-        """Determine source tool from folder name and content."""
+    def _determine_source_tool(self, folder: str, subject: str, body: str, from_address: str = "") -> str:
+        """Determine source tool from folder name, content, and sender."""
         folder_lower = folder.lower()
+        from_lower = from_address.lower()
 
-        # Check folder name first
+        # Check from_address for specific tool signatures first
+        if "pulse.netscout@" in from_lower or "ngenius" in from_lower:
+            return "netscout_pulse"
+        if "xmatters.com" in from_lower or "xmatters" in from_lower:
+            return "xmatters"
+
+        # Check folder name
         for tool in ["op5", "nagios", "xymon", "splunk", "prometheus", "zabbix"]:
             if tool in folder_lower:
                 return tool
@@ -185,6 +272,15 @@ class EmailParser:
             return "xymon"
         if "nagios" in content or "op5" in content:
             return "op5"
+        if "business service alert" in content:
+            # Check if it's NetScout Pulse by body content
+            if "ngeniuspulse" in content or "ngenius" in content or "pulse.charter.com" in content:
+                return "netscout_pulse"
+            return "business_service"
+        if "pagerduty" in content:
+            return "pagerduty"
+        if "datadog" in content:
+            return "datadog"
 
         return folder.replace("INBOX", "generic").replace("/", "_")
 
@@ -224,6 +320,7 @@ class EmailParser:
             "crit": "critical",
             "emergency": "critical",
             "alert": "critical",
+            "excessive": "high",
             "firing": "high",
             "high": "high",
             "major": "high",
@@ -250,51 +347,14 @@ class EmailParser:
         if not state:
             return "firing"
 
-        state_lower = state.lower()
+        state_lower = state.lower().strip()
 
-        if state_lower in ["ok", "resolved", "recovery", "green"]:
+        if state_lower in ["ok", "resolved", "recovery", "green", "closed"]:
             return "resolved"
-        if state_lower in ["problem", "critical", "warning", "firing", "red", "yellow"]:
+        if state_lower in ["problem", "critical", "warning", "firing", "red", "yellow", "triggered"]:
             return "firing"
 
         return "unknown"
-
-    def _normalize_signature(self, subject: str, body: str) -> str:
-        """Normalize signature for deduplication."""
-        content = subject + " " + body[:500]
-
-        # Lowercase
-        content = content.lower()
-
-        # Remove GUIDs
-        content = re.sub(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}", "<guid>", content)
-
-        # Remove request IDs
-        content = re.sub(r"(request[_-]?id|req[_-]?id|trace[_-]?id)[=:]\s*\S+", "<id>", content)
-
-        # Remove timestamps
-        content = re.sub(r"\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}(\.\d+)?Z?", "<ts>", content)
-        content = re.sub(r"\d{1,2}[/-]\d{1,2}[/-]\d{2,4}\s+\d{1,2}:\d{2}(:\d{2})?", "<ts>", content)
-
-        # Remove volatile numbers (ports, pids, counts)
-        content = re.sub(r"(pid|port|count|duration|latency)[=:]\s*\d+", r"\1=<n>", content)
-
-        # Collapse whitespace
-        content = re.sub(r"\s+", " ", content).strip()
-
-        return content
-
-    def _compute_fingerprint(self, event: Dict[str, Any]) -> str:
-        """Compute fingerprint for incident correlation."""
-        components = [
-            event.get("environment") or "",
-            event.get("host") or "",
-            event.get("check_name") or event.get("service") or "",
-            event.get("normalized_signature", "")[:200]
-        ]
-
-        fingerprint_str = "|".join(components).lower()
-        return hashlib.sha256(fingerprint_str.encode()).hexdigest()[:16]
 
     def _extract_tags(self, subject: str, body: str, parsed: Dict) -> List[str]:
         """Extract tags from email content."""

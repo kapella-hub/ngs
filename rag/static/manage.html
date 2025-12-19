@@ -1,0 +1,1146 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Manage Documents - Local RAG System</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: #000000;
+            min-height: 100vh;
+            padding: 20px;
+            color: #fff;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 30px;
+            padding-bottom: 20px;
+            border-bottom: 2px solid #2a2a2a;
+        }
+
+        .header h1 {
+            font-size: 2rem;
+            color: #fff;
+        }
+
+        .back-link {
+            padding: 10px 20px;
+            background: #4a9eff;
+            color: white;
+            text-decoration: none;
+            border-radius: 8px;
+            transition: transform 0.2s ease;
+        }
+
+        .back-link:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(74, 158, 255, 0.4);
+            background: #5ab0ff;
+        }
+
+        .stats-bar {
+            background: #1a1a1a;
+            border-radius: 12px;
+            padding: 15px 25px;
+            margin-bottom: 30px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .stat-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .stat-label {
+            color: #aaa;
+            font-size: 0.9rem;
+        }
+
+        .stat-value {
+            color: #4a9eff;
+            font-size: 1.5rem;
+            font-weight: bold;
+        }
+
+        .card {
+            background: #1a1a1a;
+            border-radius: 12px;
+            padding: 30px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+            margin-bottom: 30px;
+        }
+
+        .card h2 {
+            color: #ffffff;
+            margin-bottom: 20px;
+            font-size: 1.5rem;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        /* Upload Section */
+        .upload-area {
+            border: 2px dashed #4a9eff;
+            border-radius: 8px;
+            padding: 60px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            background: #0a0a0a;
+        }
+
+        .upload-area:hover {
+            background: #151515;
+            border-color: #5ab0ff;
+        }
+
+        .upload-area.dragover {
+            background: #1a1a1a;
+            border-color: #5ab0ff;
+            transform: scale(1.02);
+        }
+
+        .upload-icon {
+            font-size: 4rem;
+            color: #4a9eff;
+            margin-bottom: 15px;
+        }
+
+        .upload-area p {
+            color: #aaa;
+            margin: 10px 0;
+            font-size: 1.1rem;
+        }
+
+        .file-input {
+            display: none;
+        }
+
+        .btn {
+            background: #4a9eff;
+            color: white;
+            border: none;
+            padding: 12px 30px;
+            border-radius: 8px;
+            font-size: 1rem;
+            cursor: pointer;
+            transition: transform 0.2s ease;
+            margin-top: 15px;
+        }
+
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(74, 158, 255, 0.4);
+            background: #5ab0ff;
+        }
+
+        .btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .btn-danger {
+            background: #ef4444;
+            padding: 8px 16px;
+            font-size: 0.9rem;
+        }
+
+        .btn-danger:hover {
+            background: #dc2626;
+            box-shadow: 0 4px 12px rgba(239, 68, 68, 0.4);
+        }
+
+        .file-list {
+            margin-top: 20px;
+            max-height: 200px;
+            overflow-y: auto;
+        }
+
+        .file-item {
+            background: #0a0a0a;
+            padding: 12px 16px;
+            border-radius: 6px;
+            margin: 8px 0;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 0.95rem;
+        }
+
+        .file-item .filename {
+            color: #fff;
+            flex: 1;
+        }
+
+        .file-item .filesize {
+            color: #888;
+            margin-left: 10px;
+        }
+
+        .status-message {
+            margin-top: 20px;
+            padding: 12px;
+            border-radius: 6px;
+            font-size: 0.9rem;
+            display: none;
+        }
+
+        .status-message.success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+            display: block;
+        }
+
+        .status-message.error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+            display: block;
+        }
+
+        .status-message.info {
+            background: #d1ecf1;
+            color: #0c5460;
+            border: 1px solid #bee5eb;
+            display: block;
+        }
+
+        /* Files Table */
+        .files-table-container {
+            overflow-x: auto;
+        }
+
+        .files-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+        }
+
+        .files-table th {
+            background: #2a2a2a;
+            color: #4a9eff;
+            padding: 12px;
+            text-align: left;
+            font-weight: 600;
+            border-bottom: 2px solid #3a3a3a;
+        }
+
+        .files-table td {
+            padding: 12px;
+            border-bottom: 1px solid #2a2a2a;
+            color: #ccc;
+        }
+
+        .files-table tr:hover {
+            background: #1a1a1a;
+        }
+
+        .files-table .filename-col {
+            color: #fff;
+            font-weight: 500;
+        }
+
+        .empty-state {
+            text-align: center;
+            color: #666;
+            padding: 60px 20px;
+        }
+
+        .empty-state .icon {
+            font-size: 4rem;
+            margin-bottom: 15px;
+            opacity: 0.3;
+        }
+
+        .loading {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid rgba(255, 255, 255, 0.3);
+            border-radius: 50%;
+            border-top-color: white;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        /* Search Box */
+        .search-box {
+            margin-bottom: 20px;
+        }
+
+        .search-input {
+            width: 100%;
+            padding: 12px 16px;
+            border: 2px solid #3a3a3a;
+            border-radius: 8px;
+            font-size: 1rem;
+            font-family: inherit;
+            background: #0a0a0a;
+            color: #fff;
+            transition: border-color 0.3s ease;
+        }
+
+        .search-input:focus {
+            outline: none;
+            border-color: #4a9eff;
+        }
+
+        .search-input::placeholder {
+            color: #666;
+        }
+
+        /* Pagination */
+        .pagination {
+            margin-top: 20px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+
+        .pagination-btn {
+            background: #2a2a2a;
+            color: #fff;
+            border: 1px solid #3a3a3a;
+            padding: 8px 16px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 0.9rem;
+            transition: all 0.2s ease;
+        }
+
+        .pagination-btn:hover:not(:disabled) {
+            background: #3a3a3a;
+            border-color: #4a9eff;
+            color: #4a9eff;
+        }
+
+        .pagination-btn:disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
+        }
+
+        .pagination-btn.active {
+            background: #4a9eff;
+            border-color: #4a9eff;
+            color: #fff;
+        }
+
+        .pagination-info {
+            color: #aaa;
+            font-size: 0.9rem;
+            padding: 0 10px;
+        }
+
+        /* Scrollbar Styles */
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: #1a1a1a;
+            border-radius: 4px;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: #4a9eff;
+            border-radius: 4px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: #5ab0ff;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>📁 Manage Documents</h1>
+            <a href="/" class="back-link">← Back to Chat</a>
+        </div>
+
+        <div class="stats-bar">
+            <div class="stat-item">
+                <span class="stat-label">📚 Total Files:</span>
+                <span class="stat-value" id="fileCount">-</span>
+            </div>
+            <div class="stat-item">
+                <span class="stat-label">📦 Total Chunks:</span>
+                <span class="stat-value" id="chunkCount">-</span>
+            </div>
+            <div class="stat-item">
+                <span class="stat-label">Status:</span>
+                <span class="stat-value" id="systemStatus" style="font-size: 1rem;">●</span>
+            </div>
+            <div class="stat-item">
+                <button class="btn-danger" id="clearBtn" onclick="clearAllData()">
+                    🗑️ Clear All Data
+                </button>
+            </div>
+        </div>
+
+        <!-- Upload Section -->
+        <div class="card">
+            <h2><span>📤</span> Upload Documents</h2>
+            <div class="upload-area" id="uploadArea">
+                <div class="upload-icon">📁</div>
+                <p><strong>Drag & drop files here</strong></p>
+                <p>or</p>
+                <button class="btn" onclick="document.getElementById('fileInput').click()">
+                    Browse Files
+                </button>
+                <input type="file" id="fileInput" class="file-input" multiple 
+                       accept=".txt,.md,.pdf,.docx,.pptx,.xls,.xlsx,.html,.htm,.csv,.png,.jpg,.jpeg,.tif,.tiff">
+            </div>
+
+            <div class="file-list" id="fileList"></div>
+
+            <button class="btn" id="uploadBtn" style="width: 100%; display: none;">
+                Upload Files
+            </button>
+
+            <div class="status-message" id="uploadStatus"></div>
+        </div>
+
+        <!-- Add from URL Section -->
+        <div class="card">
+            <h2><span>🌐</span> Add from URL</h2>
+            <div style="display: flex; gap: 10px; align-items: center; margin-bottom: 15px;">
+                <input type="url" 
+                       class="search-input" 
+                       id="urlInput" 
+                       placeholder="Enter URL (e.g., https://example.com/page)"
+                       style="flex: 1;">
+                <button class="btn" id="urlBtn" onclick="addFromUrl()">
+                    Add URL
+                </button>
+                <button class="btn-danger" id="stopIngestionBtn" onclick="cancelIngestion()" 
+                        style="display: none;">
+                    ⏹️ Stop Ingestion
+                </button>
+            </div>
+            
+            <!-- Crawling Options -->
+            <div style="background: #0a0a0a; padding: 15px; border-radius: 8px; margin-bottom: 15px;">
+                <div style="margin-bottom: 10px;">
+                    <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; color: #ccc;">
+                        <input type="checkbox" id="followLinksCheckbox" onchange="toggleCrawlOptions()" 
+                               style="width: 18px; height: 18px; cursor: pointer;">
+                        <span style="font-size: 0.95rem;">🔗 Follow and ingest links found on the page</span>
+                    </label>
+                </div>
+                
+                <div id="crawlOptions" style="display: none; margin-left: 26px; margin-top: 12px;">
+                    <div style="margin-bottom: 10px;">
+                        <label style="color: #aaa; font-size: 0.85rem; display: block; margin-bottom: 5px;">
+                            Maximum crawl depth (1-5):
+                        </label>
+                        <input type="number" id="maxDepthInput" min="1" max="5" value="1"
+                               style="width: 80px; padding: 6px 10px; border: 1px solid #3a3a3a; border-radius: 4px; 
+                                      background: #1a1a1a; color: #fff; font-size: 0.9rem;">
+                        <span style="color: #666; font-size: 0.8rem; margin-left: 8px;">
+                            (1 = only start page, 2 = start + linked pages, etc.)
+                        </span>
+                    </div>
+                    
+                    <div>
+                        <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; color: #ccc;">
+                            <input type="checkbox" id="sameDomainCheckbox" checked 
+                                   style="width: 16px; height: 16px; cursor: pointer;">
+                            <span style="font-size: 0.9rem;">Only follow links within the same domain</span>
+                        </label>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="status-message" id="urlStatus"></div>
+        </div>
+
+        <!-- Uploaded Files Section -->
+        <div class="card">
+            <h2><span>📋</span> Uploaded Files</h2>
+            
+            <!-- Search Box -->
+            <div class="search-box">
+                <input type="text" 
+                       class="search-input" 
+                       id="searchInput" 
+                       placeholder="🔍 Search documents by filename..."
+                       oninput="handleSearch()">
+            </div>
+            
+            <div class="files-table-container" id="filesTableContainer">
+                <div class="empty-state">
+                    <div class="icon">📄</div>
+                    <p>No files uploaded yet. Upload some documents to get started!</p>
+                </div>
+            </div>
+            
+            <!-- Pagination -->
+            <div class="pagination" id="paginationContainer" style="display: none;">
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let selectedFiles = [];
+        let currentJobId = null;  // Track current URL ingestion job for cancellation
+        
+        // Pagination and search state
+        let allFiles = [];
+        let currentPage = 1;
+        const itemsPerPage = 10;
+        let searchQuery = '';
+
+        // Load data on page load
+        window.addEventListener('load', () => {
+            loadFilesList();
+            checkHealth();
+        });
+
+        // Health check
+        async function checkHealth() {
+            try {
+                const response = await fetch('/health');
+                const data = await response.json();
+                const statusEl = document.getElementById('systemStatus');
+                if (data.status === 'healthy') {
+                    statusEl.textContent = '🟢 Online';
+                    statusEl.style.color = '#10b981';
+                } else {
+                    statusEl.textContent = '🔴 Offline';
+                    statusEl.style.color = '#ef4444';
+                }
+            } catch (error) {
+                document.getElementById('systemStatus').textContent = '🔴 Offline';
+                document.getElementById('systemStatus').style.color = '#ef4444';
+            }
+        }
+
+        // Load files list
+        async function loadFilesList() {
+            try {
+                const response = await fetch('/documents/list');
+                const data = await response.json();
+                
+                document.getElementById('fileCount').textContent = data.total_files || 0;
+                
+                // Calculate total chunks
+                const totalChunks = data.files.reduce((sum, file) => sum + file.chunk_count, 0);
+                document.getElementById('chunkCount').textContent = totalChunks;
+
+                // Store all files and reset to page 1
+                allFiles = data.files;
+                currentPage = 1;
+                searchQuery = '';
+                document.getElementById('searchInput').value = '';
+                
+                displayFilesTable();
+            } catch (error) {
+                console.error('Error loading files:', error);
+                document.getElementById('fileCount').textContent = 'Error';
+                document.getElementById('chunkCount').textContent = 'Error';
+            }
+        }
+
+        // Filter files by search query
+        function getFilteredFiles() {
+            if (!searchQuery.trim()) {
+                return allFiles;
+            }
+            
+            const query = searchQuery.toLowerCase();
+            return allFiles.filter(file => 
+                file.filename.toLowerCase().includes(query)
+            );
+        }
+
+        // Handle search input
+        function handleSearch() {
+            searchQuery = document.getElementById('searchInput').value;
+            currentPage = 1; // Reset to first page on new search
+            displayFilesTable();
+        }
+
+        // Display files in table with pagination
+        function displayFilesTable() {
+            const container = document.getElementById('filesTableContainer');
+            const paginationContainer = document.getElementById('paginationContainer');
+            
+            // Get filtered files
+            const filteredFiles = getFilteredFiles();
+            
+            if (!filteredFiles || filteredFiles.length === 0) {
+                container.innerHTML = `
+                    <div class="empty-state">
+                        <div class="icon">📄</div>
+                        <p>${searchQuery ? 'No files match your search.' : 'No files uploaded yet. Upload some documents to get started!'}</p>
+                    </div>
+                `;
+                paginationContainer.style.display = 'none';
+                return;
+            }
+
+            // Calculate pagination
+            const totalPages = Math.ceil(filteredFiles.length / itemsPerPage);
+            const startIndex = (currentPage - 1) * itemsPerPage;
+            const endIndex = startIndex + itemsPerPage;
+            const paginatedFiles = filteredFiles.slice(startIndex, endIndex);
+
+            // Display table
+            const tableHTML = `
+                <table class="files-table">
+                    <thead>
+                        <tr>
+                            <th>Filename</th>
+                            <th>Upload Date</th>
+                            <th>Chunks</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${paginatedFiles.map(file => {
+                            const isUrl = file.filename.startsWith('http://') || file.filename.startsWith('https://');
+                            const icon = isUrl ? '🌐' : '📄';
+                            return `
+                            <tr>
+                                <td class="filename-col">${icon} ${file.filename}</td>
+                                <td>${formatDate(file.upload_date)}</td>
+                                <td>${file.chunk_count}</td>
+                                <td>
+                                    ${isUrl ? `
+                                    <button class="btn" onclick="refreshUrl('${escapeHtml(file.filename)}')" style="background: #10b981; margin-right: 5px;">
+                                        🔄 Refresh
+                                    </button>
+                                    ` : ''}
+                                    <button class="btn btn-danger" onclick="deleteFile('${escapeHtml(file.filename)}')">
+                                        🗑️ Delete
+                                    </button>
+                                </td>
+                            </tr>
+                            `;
+                        }).join('')}
+                    </tbody>
+                </table>
+            `;
+
+            container.innerHTML = tableHTML;
+            
+            // Display pagination if needed
+            if (totalPages > 1) {
+                renderPagination(totalPages, filteredFiles.length);
+            } else {
+                paginationContainer.style.display = 'none';
+            }
+        }
+
+        // Render pagination controls
+        function renderPagination(totalPages, totalItems) {
+            const paginationContainer = document.getElementById('paginationContainer');
+            
+            let paginationHTML = '';
+            
+            // Previous button
+            paginationHTML += `
+                <button class="pagination-btn" 
+                        onclick="goToPage(${currentPage - 1})" 
+                        ${currentPage === 1 ? 'disabled' : ''}>
+                    ← Previous
+                </button>
+            `;
+            
+            // Page numbers
+            const maxVisiblePages = 5;
+            let startPage = Math.max(1, currentPage - Math.floor(maxVisiblePages / 2));
+            let endPage = Math.min(totalPages, startPage + maxVisiblePages - 1);
+            
+            // Adjust start if we're near the end
+            if (endPage - startPage < maxVisiblePages - 1) {
+                startPage = Math.max(1, endPage - maxVisiblePages + 1);
+            }
+            
+            // First page + ellipsis
+            if (startPage > 1) {
+                paginationHTML += `
+                    <button class="pagination-btn" onclick="goToPage(1)">1</button>
+                `;
+                if (startPage > 2) {
+                    paginationHTML += `<span class="pagination-info">...</span>`;
+                }
+            }
+            
+            // Page number buttons
+            for (let i = startPage; i <= endPage; i++) {
+                paginationHTML += `
+                    <button class="pagination-btn ${i === currentPage ? 'active' : ''}" 
+                            onclick="goToPage(${i})">
+                        ${i}
+                    </button>
+                `;
+            }
+            
+            // Ellipsis + last page
+            if (endPage < totalPages) {
+                if (endPage < totalPages - 1) {
+                    paginationHTML += `<span class="pagination-info">...</span>`;
+                }
+                paginationHTML += `
+                    <button class="pagination-btn" onclick="goToPage(${totalPages})">${totalPages}</button>
+                `;
+            }
+            
+            // Next button
+            paginationHTML += `
+                <button class="pagination-btn" 
+                        onclick="goToPage(${currentPage + 1})" 
+                        ${currentPage === totalPages ? 'disabled' : ''}>
+                    Next →
+                </button>
+            `;
+            
+            // Page info
+            const startItem = (currentPage - 1) * itemsPerPage + 1;
+            const endItem = Math.min(currentPage * itemsPerPage, totalItems);
+            paginationHTML += `
+                <span class="pagination-info">
+                    Showing ${startItem}-${endItem} of ${totalItems} files
+                </span>
+            `;
+            
+            paginationContainer.innerHTML = paginationHTML;
+            paginationContainer.style.display = 'flex';
+        }
+
+        // Go to specific page
+        function goToPage(page) {
+            const filteredFiles = getFilteredFiles();
+            const totalPages = Math.ceil(filteredFiles.length / itemsPerPage);
+            
+            if (page < 1 || page > totalPages) {
+                return;
+            }
+            
+            currentPage = page;
+            displayFilesTable();
+        }
+
+        // Format date
+        function formatDate(isoDate) {
+            if (!isoDate || isoDate === 'unknown') {
+                return 'Unknown';
+            }
+            
+            try {
+                const date = new Date(isoDate);
+                return date.toLocaleString();
+            } catch (e) {
+                return isoDate;
+            }
+        }
+
+        // Escape HTML for security
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        // Delete file
+        async function deleteFile(filename) {
+            const confirmed = confirm(
+                `⚠️ Warning: This will permanently delete "${filename}" and all its data.\n\n` +
+                'Are you sure you want to continue?'
+            );
+
+            if (!confirmed) {
+                return;
+            }
+
+            try {
+                const response = await fetch(`/documents/file/${encodeURIComponent(filename)}`, {
+                    method: 'DELETE'
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    alert(`✅ Successfully deleted "${filename}"`);
+                    loadFilesList(); // Refresh the list
+                } else {
+                    throw new Error(data.detail || 'Failed to delete file');
+                }
+            } catch (error) {
+                console.error('Error deleting file:', error);
+                alert('❌ Error deleting file: ' + error.message);
+            }
+        }
+
+        // Drag and drop handlers
+        const uploadArea = document.getElementById('uploadArea');
+
+        uploadArea.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            uploadArea.classList.add('dragover');
+        });
+
+        uploadArea.addEventListener('dragleave', () => {
+            uploadArea.classList.remove('dragover');
+        });
+
+        uploadArea.addEventListener('drop', (e) => {
+            e.preventDefault();
+            uploadArea.classList.remove('dragover');
+            const files = Array.from(e.dataTransfer.files);
+            handleFiles(files);
+        });
+
+        // File input change handler
+        document.getElementById('fileInput').addEventListener('change', (e) => {
+            const files = Array.from(e.target.files);
+            handleFiles(files);
+        });
+
+        // Handle selected files
+        function handleFiles(files) {
+            selectedFiles = files;
+            displayFileList();
+            document.getElementById('uploadBtn').style.display = files.length > 0 ? 'block' : 'none';
+        }
+
+        // Display file list
+        function displayFileList() {
+            const fileListEl = document.getElementById('fileList');
+            if (selectedFiles.length === 0) {
+                fileListEl.innerHTML = '';
+                return;
+            }
+
+            fileListEl.innerHTML = selectedFiles.map(file => `
+                <div class="file-item">
+                    <span class="filename">📄 ${file.name}</span>
+                    <span class="filesize">${formatFileSize(file.size)}</span>
+                </div>
+            `).join('');
+        }
+
+        // Format file size
+        function formatFileSize(bytes) {
+            if (bytes < 1024) return bytes + ' B';
+            if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+            return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+        }
+
+        // Upload files
+        document.getElementById('uploadBtn').addEventListener('click', async () => {
+            if (selectedFiles.length === 0) return;
+
+            const uploadBtn = document.getElementById('uploadBtn');
+            const statusEl = document.getElementById('uploadStatus');
+            
+            uploadBtn.disabled = true;
+            uploadBtn.innerHTML = '<span class="loading"></span> Uploading...';
+            statusEl.className = 'status-message info';
+            statusEl.textContent = 'Uploading and processing documents...';
+
+            const formData = new FormData();
+            selectedFiles.forEach(file => {
+                formData.append('files', file);
+            });
+
+            try {
+                const response = await fetch('/documents/upload', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    statusEl.className = 'status-message success';
+                    statusEl.textContent = `✅ Successfully uploaded ${data.success_count} file(s). Created ${data.total_chunks} chunks.`;
+                    
+                    if (data.failed_count > 0) {
+                        statusEl.textContent += ` ${data.failed_count} file(s) failed.`;
+                    }
+
+                    // Clear selection
+                    selectedFiles = [];
+                    document.getElementById('fileInput').value = '';
+                    displayFileList();
+                    document.getElementById('uploadBtn').style.display = 'none';
+
+                    // Refresh files list
+                    setTimeout(() => loadFilesList(), 1000);
+                } else {
+                    throw new Error(data.detail || 'Upload failed');
+                }
+            } catch (error) {
+                statusEl.className = 'status-message error';
+                statusEl.textContent = `❌ Error: ${error.message}`;
+            } finally {
+                uploadBtn.disabled = false;
+                uploadBtn.textContent = 'Upload Files';
+            }
+        });
+
+        // Clear all data
+        async function clearAllData() {
+            // Confirmation dialog
+            const confirmed = confirm(
+                '⚠️ Warning: This will permanently delete all uploaded documents and their data.\n\n' +
+                'Are you sure you want to continue?'
+            );
+
+            if (!confirmed) {
+                return;
+            }
+
+            const clearBtn = document.getElementById('clearBtn');
+            const originalText = clearBtn.innerHTML;
+
+            try {
+                clearBtn.disabled = true;
+                clearBtn.innerHTML = '<span class="loading"></span> Clearing...';
+
+                const response = await fetch('/documents/clear', {
+                    method: 'DELETE'
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    // Success - update UI
+                    document.getElementById('fileCount').textContent = '0';
+                    document.getElementById('chunkCount').textContent = '0';
+                    
+                    // Show success message
+                    alert('✅ All data cleared successfully!');
+                    
+                    // Reload files list to show empty state
+                    loadFilesList();
+                } else {
+                    throw new Error(data.detail || 'Failed to clear data');
+                }
+            } catch (error) {
+                console.error('Error clearing data:', error);
+                alert('❌ Error clearing data: ' + error.message);
+            } finally {
+                clearBtn.disabled = false;
+                clearBtn.innerHTML = originalText;
+            }
+        }
+
+        // Toggle crawl options visibility
+        function toggleCrawlOptions() {
+            const followLinksCheckbox = document.getElementById('followLinksCheckbox');
+            const crawlOptions = document.getElementById('crawlOptions');
+            
+            if (followLinksCheckbox.checked) {
+                crawlOptions.style.display = 'block';
+            } else {
+                crawlOptions.style.display = 'none';
+            }
+        }
+
+        // Add from URL
+        async function addFromUrl() {
+            const urlInput = document.getElementById('urlInput');
+            const urlBtn = document.getElementById('urlBtn');
+            const stopBtn = document.getElementById('stopIngestionBtn');
+            const statusEl = document.getElementById('urlStatus');
+            const url = urlInput.value.trim();
+
+            if (!url) {
+                statusEl.className = 'status-message error';
+                statusEl.textContent = '❌ Please enter a URL';
+                return;
+            }
+
+            if (!url.startsWith('http://') && !url.startsWith('https://')) {
+                statusEl.className = 'status-message error';
+                statusEl.textContent = '❌ URL must start with http:// or https://';
+                return;
+            }
+
+            // Get crawling options
+            const followLinks = document.getElementById('followLinksCheckbox').checked;
+            const maxDepth = parseInt(document.getElementById('maxDepthInput').value) || 2;
+            const sameDomainOnly = document.getElementById('sameDomainCheckbox').checked;
+
+            const originalText = urlBtn.innerHTML;
+            
+            try {
+                urlBtn.disabled = true;
+                urlBtn.innerHTML = '<span class="loading"></span> Fetching...';
+                statusEl.className = 'status-message info';
+                
+                if (followLinks) {
+                    statusEl.textContent = `Crawling URL and following links (depth: ${maxDepth}, same domain: ${sameDomainOnly ? 'yes' : 'no'})...`;
+                } else {
+                    statusEl.textContent = 'Fetching and processing URL content...';
+                }
+
+                const requestBody = {
+                    url: url,
+                    follow_links: followLinks,
+                    max_depth: maxDepth,
+                    same_domain_only: sameDomainOnly
+                };
+
+                const response = await fetch('/documents/upload-url', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(requestBody)
+                });
+
+                const data = await response.json();
+
+                // Store job_id and show stop button if this is a crawling operation
+                if (data.job_id) {
+                    currentJobId = data.job_id;
+                    stopBtn.style.display = 'block';
+                }
+
+                if (response.ok && data.success) {
+                    statusEl.className = 'status-message success';
+                    
+                    let message = `✅ Successfully added URL!\n\n`;
+                    message += `📊 Statistics:\n`;
+                    message += `• URLs processed: ${data.urls_processed || 1}\n`;
+                    if (data.urls_failed && data.urls_failed > 0) {
+                        message += `• URLs failed: ${data.urls_failed}\n`;
+                    }
+                    message += `• Total chunks created: ${data.total_chunks}`;
+                    
+                    statusEl.textContent = message;
+                    statusEl.style.whiteSpace = 'pre-line';
+                    
+                    // Clear input
+                    urlInput.value = '';
+
+                    // Refresh files list
+                    setTimeout(() => loadFilesList(), 1000);
+                } else if (data.cancelled) {
+                    statusEl.className = 'status-message info';
+                    statusEl.textContent = `⏹️ Operation cancelled by user.\n\n${data.urls_processed || 0} URLs were processed before cancellation.`;
+                    statusEl.style.whiteSpace = 'pre-line';
+                } else {
+                    throw new Error(data.error || data.detail || 'Failed to add URL');
+                }
+            } catch (error) {
+                statusEl.className = 'status-message error';
+                statusEl.textContent = `❌ Error: ${error.message}`;
+            } finally {
+                // Hide stop button and clear job ID
+                stopBtn.style.display = 'none';
+                currentJobId = null;
+                
+                urlBtn.disabled = false;
+                urlBtn.innerHTML = originalText;
+            }
+        }
+
+        // Cancel ongoing URL ingestion
+        async function cancelIngestion() {
+            if (!currentJobId) {
+                console.warn('No active job to cancel');
+                return;
+            }
+
+            const stopBtn = document.getElementById('stopIngestionBtn');
+            const statusEl = document.getElementById('urlStatus');
+            
+            try {
+                stopBtn.disabled = true;
+                stopBtn.innerHTML = '<span class="loading"></span> Stopping...';
+                
+                const response = await fetch(`/documents/cancel-ingestion/${currentJobId}`, {
+                    method: 'POST'
+                });
+
+                const data = await response.json();
+
+                if (response.ok && data.success) {
+                    statusEl.className = 'status-message info';
+                    statusEl.textContent = `⏹️ ${data.message}`;
+                } else {
+                    statusEl.className = 'status-message error';
+                    statusEl.textContent = `⚠️ ${data.message || 'Failed to cancel operation'}`;
+                }
+            } catch (error) {
+                console.error('Error cancelling ingestion:', error);
+                statusEl.className = 'status-message error';
+                statusEl.textContent = `❌ Error: ${error.message}`;
+            } finally {
+                stopBtn.disabled = false;
+                stopBtn.innerHTML = '⏹️ Stop Ingestion';
+            }
+        }
+
+        // Refresh URL content
+        async function refreshUrl(url) {
+            const confirmed = confirm(
+                `Refresh content from:\n${url}\n\n` +
+                'This will re-fetch the latest content from the URL and update the indexed data.\n\n' +
+                'Continue?'
+            );
+
+            if (!confirmed) {
+                return;
+            }
+
+            try {
+                // Encode URL for path parameter
+                const encodedUrl = encodeURIComponent(url);
+                
+                const response = await fetch(`/documents/refresh-url/${encodedUrl}`, {
+                    method: 'POST'
+                });
+
+                const data = await response.json();
+
+                if (response.ok && data.success) {
+                    alert(`✅ Successfully refreshed URL!\n\nCreated ${data.total_chunks} chunks from updated content.`);
+                    
+                    // Refresh files list to show updated timestamp
+                    loadFilesList();
+                } else {
+                    throw new Error(data.error || data.detail || 'Failed to refresh URL');
+                }
+            } catch (error) {
+                console.error('Error refreshing URL:', error);
+                alert(`❌ Error refreshing URL:\n${error.message}`);
+            }
+        }
+    </script>
+</body>
+</html>

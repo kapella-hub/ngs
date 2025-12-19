@@ -1,0 +1,38 @@
+version: '3.8'
+
+services:
+  rag-system:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: local-rag-system
+    ports:
+      - "8001:8001"
+    volumes:
+      # Persist vector database
+      - ./data/chroma:/app/data/chroma
+      # Persist uploaded documents
+      - ./data/uploads:/app/data/uploads
+      # Persist extracted images
+      - ./data/images:/app/data/images
+    environment:
+      # Override any .env settings if needed
+      - APP_HOST=0.0.0.0
+      - APP_PORT=8001
+      - LOG_LEVEL=INFO
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    # Resource limits (adjust based on your system)
+    deploy:
+      resources:
+        limits:
+          cpus: '4'
+          memory: 8G
+        reservations:
+          cpus: '2'
+          memory: 4G

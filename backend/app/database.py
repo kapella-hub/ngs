@@ -1,4 +1,5 @@
 """Database connection and pool management."""
+import json
 from typing import Optional
 
 import asyncpg
@@ -9,6 +10,22 @@ from app.config import get_settings
 logger = structlog.get_logger()
 
 _pool: Optional[asyncpg.Pool] = None
+
+
+async def _init_connection(conn: asyncpg.Connection):
+    """Initialize connection with JSON codec."""
+    await conn.set_type_codec(
+        'jsonb',
+        encoder=json.dumps,
+        decoder=json.loads,
+        schema='pg_catalog'
+    )
+    await conn.set_type_codec(
+        'json',
+        encoder=json.dumps,
+        decoder=json.loads,
+        schema='pg_catalog'
+    )
 
 
 async def init_db() -> asyncpg.Pool:
@@ -23,6 +40,7 @@ async def init_db() -> asyncpg.Pool:
         min_size=5,
         max_size=20,
         command_timeout=60,
+        init=_init_connection,
     )
 
     logger.info("Database connection pool initialized")

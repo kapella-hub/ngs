@@ -8,8 +8,12 @@ import structlog
 
 from worker.config import get_settings
 from worker.database import get_pool
+from worker.schemas import ResolutionReason, IncidentStatus
 
 logger = structlog.get_logger()
+
+# Severity order for comparison
+SEVERITY_ORDER = ["info", "low", "medium", "high", "critical"]
 
 
 class Correlator:
@@ -22,8 +26,11 @@ class Correlator:
         """Process an alert event and correlate into incident."""
         pool = await get_pool()
 
-        fingerprint = event.get("fingerprint")
-        if not fingerprint:
+        # Use fingerprint_v2 for correlation (excludes severity for stable correlation)
+        fingerprint_v2 = event.get("fingerprint_v2")
+        fingerprint = event.get("fingerprint")  # Legacy, for backwards compatibility
+
+        if not fingerprint_v2 and not fingerprint:
             logger.warning("Event missing fingerprint", event=event)
             return None
 
@@ -33,15 +40,26 @@ class Correlator:
                 # Store alert event
                 event_id = await self._store_event(conn, event)
 
-                # Check for existing open incident
-                existing = await conn.fetchrow(
-                    """
-                    SELECT * FROM incidents
-                    WHERE fingerprint = $1 AND status IN ('open', 'acknowledged')
-                    FOR UPDATE
-                    """,
-                    fingerprint
-                )
+                # Check for existing open incident using fingerprint_v2 (primary)
+                # Fall back to fingerprint if v2 not available
+                if fingerprint_v2:
+                    existing = await conn.fetchrow(
+                        """
+                        SELECT * FROM incidents
+                        WHERE fingerprint_v2 = $1 AND status IN ('open', 'acknowledged', 'resolving')
+                        FOR UPDATE
+                        """,
+                        fingerprint_v2
+                    )
+                else:
+                    existing = await conn.fetchrow(
+                        """
+                        SELECT * FROM incidents
+                        WHERE fingerprint = $1 AND status IN ('open', 'acknowledged', 'resolving')
+                        FOR UPDATE
+                        """,
+                        fingerprint
+                    )
 
                 if existing:
                     # Check if this is a duplicate within dedupe window
@@ -90,9 +108,9 @@ class Correlator:
             INSERT INTO alert_events (
                 raw_email_id, source_tool, environment, region, host, check_name,
                 service, severity, state, occurred_at, normalized_signature,
-                fingerprint, payload, tags
+                fingerprint, fingerprint_v2, payload, tags
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
             RETURNING id
             """,
             UUID(event["raw_email_id"]) if event.get("raw_email_id") else None,
@@ -107,6 +125,7 @@ class Correlator:
             event.get("occurred_at", datetime.utcnow()),
             event.get("normalized_signature", ""),
             event.get("fingerprint"),
+            event.get("fingerprint_v2"),
             json.dumps(event.get("payload", {})),
             event.get("tags", [])
         )
@@ -134,81 +153,122 @@ class Correlator:
     ) -> UUID:
         """Update existing incident with new event."""
         incident_id = incident["id"]
-        current_severity = incident["severity"]
+
+        # Get current severity tracking (use new columns if available, fall back to legacy)
+        current_severity = incident.get("severity_current") or incident["severity"]
+        max_severity = incident.get("severity_max") or incident["severity"]
         new_severity = event.get("severity", "medium")
 
-        # Severity escalation
-        severity_order = ["info", "low", "medium", "high", "critical"]
-        if severity_order.index(new_severity) > severity_order.index(current_severity):
-            escalate = True
-        else:
-            escalate = False
-            new_severity = current_severity
+        # severity_current tracks the current state (can go up or down)
+        # severity_max only escalates (never goes down)
+        severity_current = new_severity
 
-        # Handle state changes
+        # Calculate severity_max (only escalates)
+        if SEVERITY_ORDER.index(new_severity) > SEVERITY_ORDER.index(max_severity):
+            severity_max = new_severity
+            escalated = True
+        else:
+            severity_max = max_severity
+            escalated = False
+
+        # Handle state changes with explicit state machine
         new_state = event.get("state", "firing")
         status = incident["status"]
+        last_state = incident.get("last_state") or "firing"
+        resolution_reason = None
 
-        if new_state == "resolved" and status in ("open", "acknowledged"):
-            # Check flap handling - require quiet time
-            quiet_time = self.settings.flap_quiet_time_minutes
-            last_firing = await conn.fetchval(
-                """
-                SELECT MAX(occurred_at) FROM alert_events ae
-                JOIN incident_events ie ON ie.alert_event_id = ae.id
-                WHERE ie.incident_id = $1 AND ae.state = 'firing'
-                """,
-                incident_id
-            )
+        if new_state == "resolved":
+            if status in ("open", "acknowledged"):
+                # Enter resolving state (waiting for quiet period)
+                status = "resolving"
+                logger.debug("Incident entering resolving state", incident_id=str(incident_id))
+            elif status == "resolving":
+                # Already resolving, check if quiet period has elapsed
+                quiet_time = self.settings.flap_quiet_time_minutes
+                last_firing = await conn.fetchval(
+                    """
+                    SELECT MAX(occurred_at) FROM alert_events ae
+                    JOIN incident_events ie ON ie.alert_event_id = ae.id
+                    WHERE ie.incident_id = $1 AND ae.state = 'firing'
+                    """,
+                    incident_id
+                )
 
-            if last_firing and (datetime.utcnow() - last_firing) > timedelta(minutes=quiet_time):
-                status = "resolved"
-        elif new_state == "firing" and status == "resolved":
-            # Reopen incident
-            status = "open"
-            await conn.execute(
-                """
-                UPDATE incidents SET flap_count = flap_count + 1 WHERE id = $1
-                """,
-                incident_id
-            )
+                if last_firing and (datetime.utcnow() - last_firing) > timedelta(minutes=quiet_time):
+                    status = "resolved"
+                    resolution_reason = ResolutionReason.EXPLICIT_CLEAR.value
+                    logger.info(
+                        "Incident resolved after quiet period",
+                        incident_id=str(incident_id),
+                        reason=resolution_reason
+                    )
+        elif new_state == "firing":
+            if status in ("resolved", "resolving"):
+                # Reopen incident - a new firing event cancels resolution
+                status = "open"
+                resolution_reason = None  # Clear any pending resolution
+                await conn.execute(
+                    """
+                    UPDATE incidents SET flap_count = flap_count + 1 WHERE id = $1
+                    """,
+                    incident_id
+                )
+                logger.info("Incident reopened", incident_id=str(incident_id))
 
-        # Update incident
+        # Update incident with severity tracking
         await conn.execute(
             """
             UPDATE incidents SET
                 severity = $2,
-                status = $3,
-                last_seen_at = $4,
+                severity_current = $2,
+                severity_max = $3,
+                last_state = $4,
+                status = $5,
+                last_seen_at = $6,
                 event_count = event_count + 1,
-                last_state_change_at = CASE WHEN status != $3 THEN NOW() ELSE last_state_change_at END,
-                resolved_at = CASE WHEN $3 = 'resolved' THEN NOW() ELSE resolved_at END,
+                last_state_change_at = CASE WHEN status != $5 THEN NOW() ELSE last_state_change_at END,
+                resolved_at = CASE WHEN $5 = 'resolved' THEN NOW() ELSE resolved_at END,
+                resolution_reason = CASE WHEN $5 = 'resolved' THEN $7 ELSE resolution_reason END,
                 updated_at = NOW()
             WHERE id = $1
             """,
-            incident_id, new_severity, status, event.get("occurred_at", datetime.utcnow())
+            incident_id,
+            severity_current,
+            severity_max,
+            new_state,
+            status,
+            event.get("occurred_at", datetime.utcnow()),
+            resolution_reason
         )
 
-        if escalate:
-            logger.info("Incident severity escalated", incident_id=str(incident_id), severity=new_severity)
+        if escalated:
+            logger.info(
+                "Incident severity escalated",
+                incident_id=str(incident_id),
+                from_severity=max_severity,
+                to_severity=new_severity
+            )
 
         return incident_id
 
     async def _create_incident(self, conn, event: Dict) -> UUID:
         """Create new incident from event."""
         title = self._generate_title(event)
+        initial_severity = event.get("severity", "medium")
+        initial_state = event.get("state", "firing")
 
         result = await conn.fetchrow(
             """
             INSERT INTO incidents (
-                fingerprint, title, source_tool, environment, region, host,
-                check_name, service, severity, status, first_seen_at, last_seen_at,
-                event_count, tags
+                fingerprint, fingerprint_v2, title, source_tool, environment, region, host,
+                check_name, service, severity, severity_current, severity_max, last_state,
+                status, first_seen_at, last_seen_at, event_count, tags
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'open', $10, $10, 1, $11)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $10, $10, $11, 'open', $12, $12, 1, $13)
             RETURNING id
             """,
             event.get("fingerprint"),
+            event.get("fingerprint_v2"),
             title,
             event.get("source_tool"),
             event.get("environment"),
@@ -216,7 +276,8 @@ class Correlator:
             event.get("host"),
             event.get("check_name"),
             event.get("service"),
-            event.get("severity", "medium"),
+            initial_severity,
+            initial_state,
             event.get("occurred_at", datetime.utcnow()),
             event.get("tags", [])
         )
@@ -279,16 +340,20 @@ class Correlator:
             result = await conn.execute(
                 """
                 UPDATE incidents
-                SET status = 'resolved', resolved_at = NOW(), updated_at = NOW()
-                WHERE status IN ('open', 'acknowledged')
+                SET status = 'resolved',
+                    resolved_at = NOW(),
+                    resolution_reason = $2,
+                    updated_at = NOW()
+                WHERE status IN ('open', 'acknowledged', 'resolving')
                 AND last_seen_at < NOW() - INTERVAL '1 hour' * $1
                 """,
-                hours
+                hours,
+                ResolutionReason.STALE.value
             )
 
             if result != "UPDATE 0":
                 count = int(result.split()[-1])
-                logger.info("Auto-resolved stale incidents", count=count)
+                logger.info("Auto-resolved stale incidents", count=count, reason="stale")
 
     async def get_incidents_for_enrichment(self, limit: int = 10):
         """Get incidents that need RAG enrichment."""

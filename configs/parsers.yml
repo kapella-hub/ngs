@@ -6,16 +6,17 @@
 
 parsers:
   # OP5 Monitor / Naemon / Nagios-compatible alerts
+  # Subject format: [OP5] PROBLEM: 'service' on 'host' is CRITICAL
+  # Or: [OP5] RECOVERY: 'service' on 'host' is OK
   op5:
     name: "OP5 Monitor"
     description: "Parser for OP5/Naemon/Nagios-style alerts"
-    subject_pattern: '\*\*\s*(?P<state>PROBLEM|RECOVERY|ACKNOWLEDGEMENT)\*\*.*Host:\s*(?P<host>\S+)'
+    subject_pattern: '\[OP5\]\s*(?P<state>PROBLEM|RECOVERY|ACKNOWLEDGEMENT):\s*[''"]?(?P<service>[^''"]+)[''"]?\s+on\s+[''"]?(?P<host>[^''"]+)[''"]?\s+is\s+(?P<severity>\w+)'
     body_patterns:
-      - 'Service:\s*(?P<service>.+?)(?:\n|$)'
-      - 'State:\s*(?P<severity>CRITICAL|WARNING|OK|UNKNOWN)'
-      - 'Additional Info:\s*(?P<info>.+?)(?:\n|$)'
+      - 'Service:\s*(?P<service_detail>.+?)(?:\n|$)'
+      - 'Status:\s*(?P<status>CRITICAL|WARNING|OK|UNKNOWN)'
       - 'Address:\s*(?P<address>\S+)'
-      - 'Date/Time:\s*(?P<datetime>.+?)(?:\n|$)'
+      - 'Check output:\s*(?P<output>.+?)(?:\n\n|$)'
     severity_map:
       CRITICAL: critical
       WARNING: medium
@@ -38,10 +39,16 @@ parsers:
       UNKNOWN: low
 
   # Xymon / Hobbit
+  # Subject formats:
+  #   Alert: Xymon [timestamp] hostname:service STATE (COLOR)
+  #   Recovery: Xymon hostname:service recovered
+  # Examples:
+  #   Xymon [1462454672] twcladcca-irveca-scope-poller-05:memory CRITICAL (RED)
+  #   Xymon bhntpdcfl-eastfl-scope-poller-02:memory recovered
   xymon:
     name: "Xymon"
     description: "Xymon/Hobbit monitoring alerts"
-    subject_pattern: '(?P<host>\S+)\.(?P<service>\S+)\s+(?P<severity>red|yellow|green|clear|purple)'
+    subject_pattern: 'Xymon\s+(?:\[\d+\]\s+)?(?P<host>[^:]+):(?P<service>\S+)\s+(?P<state>CRITICAL|WARNING|OK|recovered)(?:\s+\((?P<severity>RED|YELLOW|GREEN|CLEAR|PURPLE)\))?'
     body_patterns:
       - 'Status:\s*(?P<status_detail>.+?)(?:\n|$)'
     severity_map:
@@ -50,6 +57,7 @@ parsers:
       yellow: medium
       clear: info
       green: info
+      recovered: info
 
   # Splunk Alerts
   splunk:
@@ -126,6 +134,63 @@ parsers:
     body_patterns:
       - 'Service:\s*(?P<service>.+?)(?:\n|$)'
       - 'Urgency:\s*(?P<severity>\w+)'
+
+  # Business Service Alerts (NetScout nGeniusPULSE / ThousandEyes / ScienceLogic)
+  # Subject formats:
+  #   Open: Business Service Alert: SERVICE-NAME is SEVERITY
+  #   Closed: Business Service Alert Closed: SERVICE-NAME is no longer SEVERITY
+  # Example: Business Service Alert Closed: DASDNS-SPEEDTEST-CAST is no longer Excessive
+  netscout_pulse:
+    name: "NetScout nGeniusPULSE"
+    description: "NetScout Pulse business service alerts"
+    from_pattern: 'pulse\.netscout@|ngenius|netscout'
+    subject_pattern: 'Business Service Alert(?P<state_closed>\s+Closed)?:\s*(?P<service_name>[\w-]+)\s+is\s+(?:no longer\s+)?(?P<severity_text>\w+)'
+    body_patterns:
+      # Plain text format has labels concatenated with values (no space/colon)
+      - 'Summary(?P<summary>.+?)(?=Severity|$)'
+      - 'Severity(?P<severity_detail>Excessive|Critical|Warning|Info|Major|Minor)'
+      - 'Alert Category(?P<alert_category>.+?)(?=Name|$)'
+      - 'Name(?P<check_name>[\w-]+)'
+      - 'Description(?P<description>.+?)(?=Opened|$)'
+      - 'Opened(?P<opened>.+?)(?=Closed|$)'
+      - 'Closed(?P<closed>.+?)(?=Duration|$)'
+      - 'Duration(?P<duration>\S+)'
+      - 'Alert ID(?P<alert_id>[a-f0-9-]+)'
+      - '(?P<site_count>\d+)\s+Sites?\s+Impacted'
+      - '(?P<service_test_count>\d+)\s+[Ss]ervice [Tt]est [Pp]roblems'
+    state_rules:
+      # If subject contains "Closed" → recovery, otherwise problem
+      recovery_patterns:
+        - 'Closed'
+        - 'no longer'
+        - 'recovered'
+    severity_map:
+      excessive: high
+      critical: critical
+      major: high
+      warning: medium
+      minor: low
+      info: info
+
+  # Generic Business Service Alerts (fallback)
+  business_service:
+    name: "Business Service Alert"
+    description: "Generic business service monitoring alerts"
+    subject_pattern: 'Business Service Alert(?P<state_closed>\s+Closed)?:\s*(?P<service_name>[\w-]+)\s+is\s+(?:no longer\s+)?(?P<severity_text>\w+)(?:,\s*(?P<impacted_count>\d+)\s+impacted)?'
+    body_patterns:
+      - '[Nn]ame[:\s]*(?P<check_name>[\w-]+)'
+      - '[Aa]lert\s*ID[:\s]*(?P<alert_id>[a-f0-9-]+)'
+      - '[Ss]everity[:\s]*(?P<severity_detail>\w+)'
+      - '(?P<site_count>\d+)\s+[Ss]ites?\s+[Ii]mpacted'
+    state_rules:
+      recovery_patterns:
+        - 'Closed'
+        - 'no longer'
+    severity_map:
+      excessive: high
+      critical: critical
+      warning: medium
+      info: info
 
   # Generic fallback
   generic:

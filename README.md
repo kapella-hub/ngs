@@ -7,11 +7,12 @@ NGS ingests alerts from multiple monitoring systems via email (IMAP), normalizes
 ## Features
 
 - **Multi-source Alert Ingestion**: Monitor IMAP folders for alerts from OP5, Nagios, Xymon, Splunk, Prometheus, Zabbix, and more
+- **LLM Learning Parser**: Self-learning parser that uses local Mistral 7B LLM to automatically learn new alert formats
 - **Intelligent Deduplication**: Fingerprint-based correlation reduces alert noise
 - **Incident Management**: Track, acknowledge, resolve, and suppress incidents
 - **Maintenance Windows**: Auto-detect from email/calendar invites, suppress matching alerts
-- **AI Enrichment**: External RAG integration for suggested fixes and runbooks
-- **Modern Web UI**: React-based dashboard for triage and operations
+- **Knowledge Base**: Built-in RAG system for document search, runbooks, and suggested fixes
+- **Modern Web UI**: React-based dashboard for triage, operations, and knowledge base chat
 
 ## Architecture
 
@@ -19,19 +20,19 @@ NGS ingests alerts from multiple monitoring systems via email (IMAP), normalizes
 ┌─────────────────┐     ┌──────────────────┐     ┌─────────────────┐
 │   IMAP Server   │────▶│   ngs-worker     │────▶│   PostgreSQL    │
 │ (Email Alerts)  │     │ (Ingestion/Parse)│     │   (Data Store)  │
-└─────────────────┘     └──────────────────┘     └─────────────────┘
-                                │                        │
-                                │                        │
-                                ▼                        ▼
+└─────────────────┘     └────────┬─────────┘     └────────┬────────┘
+                                 │                        │
+                                 ▼                        ▼
                         ┌──────────────────┐     ┌─────────────────┐
-                        │   RAG Service    │     │    ngs-api      │
-                        │ (AI Enrichment)  │     │   (REST API)    │
-                        └──────────────────┘     └─────────────────┘
-                                                         │
-                                                         ▼
-                                                 ┌─────────────────┐
-                                                 │  ngs-frontend   │
+                        │   RAG Service    │◀───▶│    ngs-api      │
+                        │ (Mistral 7B LLM) │     │   (REST API)    │
+                        │ (Pattern Cache)  │     └────────┬────────┘
+                        └──────────────────┘              │
+                                 ▲                        ▼
+                                 │               ┌─────────────────┐
+                                 └───────────────│  ngs-frontend   │
                                                  │   (React UI)    │
+                                                 │ (Knowledge Base)│
                                                  └─────────────────┘
 ```
 
@@ -95,7 +96,8 @@ ngs/
 ├── worker/            # Background worker
 │   ├── worker/
 │   │   ├── imap_poller.py      # Email ingestion
-│   │   ├── parser.py           # Alert parsing
+│   │   ├── parser.py           # Alert parsing (regex + LLM)
+│   │   ├── llm_parser.py       # LLM learning parser
 │   │   ├── correlator.py       # Incident correlation
 │   │   ├── maintenance_engine.py
 │   │   └── rag_client.py       # AI enrichment
@@ -103,10 +105,18 @@ ngs/
 ├── frontend/          # React UI
 │   ├── src/
 │   │   ├── pages/     # Page components
+│   │   │   ├── KnowledgeBasePage.tsx  # RAG chat UI
+│   │   │   └── DocumentsPage.tsx      # Doc management
 │   │   ├── components/
-│   │   └── api/       # API client
+│   │   └── services/  # API clients
 │   └── Dockerfile
+├── rag/               # Local RAG service
+│   ├── app/           # FastAPI RAG application
+│   ├── static/        # RAG UI (standalone)
+│   └── Dockerfile     # Includes Mistral 7B model
 ├── migrations/        # SQL migrations
+│   ├── 001_initial.sql
+│   └── 002_pattern_cache.sql  # LLM pattern cache
 ├── configs/           # YAML configuration
 │   ├── parsers.yml    # Alert parsing rules
 │   ├── correlation.yml
@@ -245,9 +255,100 @@ Timezone: UTC
 | **downgrade** | Lower severity for routing |
 | **digest** | Include in periodic digest only |
 
-## RAG Integration
+## LLM Learning Parser
 
-NGS calls an external RAG service for incident enrichment:
+NGS includes a self-learning parser powered by a local Mistral 7B LLM. When a new alert format is encountered, the LLM extracts fields and generates reusable regex patterns that are cached for future use.
+
+### How It Works
+
+```
+┌─────────────────┐     ┌──────────────────┐     ┌─────────────────┐
+│  New Email      │────▶│ Compute Signature│────▶│ Check Pattern   │
+│  Arrives        │     │ (hash of format) │     │ Cache           │
+└─────────────────┘     └──────────────────┘     └────────┬────────┘
+                                                          │
+                        ┌─────────────────────────────────┼─────────────────────────────────┐
+                        │                                 │                                 │
+                        ▼                                 ▼                                 │
+                ┌───────────────┐                 ┌───────────────┐                        │
+                │ Cache HIT     │                 │ Cache MISS    │                        │
+                │ Apply cached  │                 │ Call Mistral  │                        │
+                │ regex rules   │                 │ LLM to parse  │                        │
+                │ (fast, no LLM)│                 │ & learn rules │                        │
+                └───────┬───────┘                 └───────┬───────┘                        │
+                        │                                 │                                 │
+                        │                                 ▼                                 │
+                        │                         ┌───────────────┐                        │
+                        │                         │ Cache new     │                        │
+                        │                         │ pattern       │────────────────────────┘
+                        │                         └───────┬───────┘
+                        │                                 │
+                        └─────────────────┬───────────────┘
+                                          ▼
+                                  ┌───────────────┐
+                                  │ Extracted:    │
+                                  │ host, service │
+                                  │ severity,state│
+                                  └───────────────┘
+```
+
+### Signature Computation
+
+Emails are grouped by format signature based on:
+- **From domain**: e.g., `xymon-alerts.company.com`
+- **Subject prefix**: First 50 chars normalized (numbers → `*N*`, dates → `*DATE*`)
+- **Body markers**: Key phrases like `severity`, `host:`, `critical`, etc.
+
+### Configuration
+
+```bash
+# Enable/disable LLM parsing (default: enabled)
+LLM_PARSING_ENABLED=true
+
+# LLM endpoint (points to RAG service)
+LLM_ENDPOINT=http://rag:8001
+```
+
+### Pattern Cache
+
+Learned patterns are stored in `pattern_cache` table:
+- `signature_hash` - SHA256 hash of format signature
+- `extraction_rules` - JSON regex patterns for each field
+- `match_count` - How many emails used this pattern
+- `success_rate` - Extraction accuracy percentage
+
+## Knowledge Base (RAG)
+
+NGS includes a built-in knowledge base powered by the same Mistral 7B LLM used for parsing. Upload runbooks, documentation, and troubleshooting guides to get AI-powered suggestions.
+
+### Features
+
+- **Document Upload**: Support for PDF, DOCX, TXT, MD, HTML, images (with OCR)
+- **URL Ingestion**: Crawl web pages and documentation sites
+- **Vector Search**: ChromaDB-powered semantic search
+- **Chat Interface**: Ask questions about your documentation
+
+### Accessing the Knowledge Base
+
+1. Navigate to **Knowledge Base** in the sidebar
+2. Upload documents via **Manage Docs**
+3. Ask questions about your documentation
+
+### API Endpoints
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/health` | GET | RAG service health check |
+| `/stats` | GET | Document/chunk counts |
+| `/ask` | POST | Ask a question |
+| `/documents/upload` | POST | Upload files |
+| `/documents/upload-url` | POST | Ingest from URL |
+| `/documents/list` | GET | List all documents |
+| `/documents/file/{name}` | DELETE | Delete a document |
+
+## RAG Integration (Incident Enrichment)
+
+NGS uses the RAG service for incident enrichment:
 
 **Request:**
 ```json
@@ -320,13 +421,15 @@ All services output structured JSON logs:
 
 ## Path to Production
 
-### Phase 1: PoC (Current)
+### Phase 1: PoC (Complete)
 
 - [x] IMAP email ingestion
 - [x] Alert parsing and correlation
 - [x] Maintenance window detection
 - [x] RAG enrichment integration
 - [x] Web UI for triage
+- [x] LLM learning parser with pattern caching
+- [x] Knowledge base with document management
 
 ### Phase 2: Production Ready
 
@@ -335,6 +438,7 @@ All services output structured JSON logs:
 - [ ] Webhook notifications (Slack, PagerDuty)
 - [ ] SSO/SAML authentication
 - [ ] Multi-tenant support
+- [ ] GPU acceleration for LLM
 
 ### Phase 3: Self-Healing
 

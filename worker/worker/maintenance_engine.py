@@ -1,6 +1,6 @@
 """Maintenance window detection and matching engine."""
 import re
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, tzinfo
 from typing import Any, Dict, List, Optional
 from uuid import UUID
 
@@ -12,9 +12,24 @@ try:
 except ImportError:
     Calendar = None
 
+try:
+    from dateutil.rrule import rrulestr
+    from dateutil import tz as dateutil_tz
+except ImportError:
+    rrulestr = None
+    dateutil_tz = None
+
+try:
+    import pytz
+except ImportError:
+    pytz = None
+
 from worker.database import get_pool
 
 logger = structlog.get_logger()
+
+# Default RRULE expansion horizon (days into the future)
+RRULE_EXPANSION_HORIZON_DAYS = 90
 
 
 class MaintenanceEngine:
@@ -168,7 +183,7 @@ class MaintenanceEngine:
         return result
 
     def _parse_ics(self, ics_content: str) -> Optional[Dict[str, Any]]:
-        """Parse ICS calendar content."""
+        """Parse ICS calendar content with RRULE expansion, timezone, and cancellation support."""
         if not Calendar:
             return None
 
@@ -177,14 +192,51 @@ class MaintenanceEngine:
 
             for component in cal.walk():
                 if component.name == "VEVENT":
+                    # Check for cancellation
+                    status = str(component.get("STATUS", "")).upper()
+                    if status == "CANCELLED":
+                        logger.info("Maintenance window cancelled via ICS STATUS:CANCELLED")
+                        return {
+                            "cancelled": True,
+                            "external_event_id": str(component.get("uid", "")),
+                            "recurrence_id": component.get("recurrence-id")
+                        }
+
+                    # Get timezone from DTSTART
+                    dtstart = component.get("dtstart")
+                    event_tz = self._get_event_timezone(dtstart, component, cal)
+
+                    # Get start and end times
+                    start_dt = dtstart.dt if dtstart else None
+                    end_dt = component.get("dtend").dt if component.get("dtend") else None
+
+                    # Ensure timezone-aware datetimes
+                    if start_dt and not hasattr(start_dt, 'tzinfo') or (hasattr(start_dt, 'tzinfo') and start_dt.tzinfo is None):
+                        if event_tz and pytz:
+                            start_dt = event_tz.localize(start_dt) if hasattr(event_tz, 'localize') else start_dt.replace(tzinfo=event_tz)
+                    if end_dt and not hasattr(end_dt, 'tzinfo') or (hasattr(end_dt, 'tzinfo') and end_dt.tzinfo is None):
+                        if event_tz and pytz:
+                            end_dt = event_tz.localize(end_dt) if hasattr(event_tz, 'localize') else end_dt.replace(tzinfo=event_tz)
+
                     result = {
                         "title": str(component.get("summary", "")),
-                        "start_ts": component.get("dtstart").dt if component.get("dtstart") else None,
-                        "end_ts": component.get("dtend").dt if component.get("dtend") else None,
+                        "start_ts": start_dt,
+                        "end_ts": end_dt,
                         "external_event_id": str(component.get("uid", "")),
-                        "is_recurring": "rrule" in component,
-                        "recurrence_rule": str(component.get("rrule")) if component.get("rrule") else None
+                        "timezone": str(event_tz) if event_tz else "UTC",
+                        "is_recurring": component.get("rrule") is not None,
+                        "recurrence_rule": None,
+                        "expanded_occurrences": []
                     }
+
+                    # Handle RRULE expansion
+                    rrule = component.get("rrule")
+                    if rrule and rrulestr and start_dt:
+                        rrule_str = rrule.to_ical().decode('utf-8')
+                        result["recurrence_rule"] = rrule_str
+                        result["expanded_occurrences"] = self._expand_rrule(
+                            rrule_str, start_dt, end_dt, event_tz
+                        )
 
                     organizer = component.get("organizer")
                     if organizer:
@@ -203,6 +255,102 @@ class MaintenanceEngine:
             logger.error("Failed to parse ICS", error=str(e))
 
         return None
+
+    def _get_event_timezone(self, dtstart, component, cal) -> Optional[tzinfo]:
+        """Extract timezone from DTSTART or VTIMEZONE component."""
+        if dtstart and hasattr(dtstart.dt, 'tzinfo') and dtstart.dt.tzinfo:
+            return dtstart.dt.tzinfo
+
+        # Check for TZID parameter
+        if dtstart:
+            tzid = dtstart.params.get('TZID')
+            if tzid and pytz:
+                try:
+                    return pytz.timezone(tzid)
+                except Exception:
+                    pass
+
+        # Check for VTIMEZONE in calendar
+        for comp in cal.walk():
+            if comp.name == "VTIMEZONE":
+                tzid = str(comp.get("TZID", ""))
+                if tzid and pytz:
+                    try:
+                        return pytz.timezone(tzid)
+                    except Exception:
+                        pass
+
+        return pytz.UTC if pytz else None
+
+    def _expand_rrule(
+        self,
+        rrule_str: str,
+        dtstart: datetime,
+        dtend: datetime,
+        event_tz: Optional[tzinfo],
+        horizon_days: int = RRULE_EXPANSION_HORIZON_DAYS
+    ) -> List[Dict[str, datetime]]:
+        """
+        Expand RRULE into individual occurrences.
+
+        Args:
+            rrule_str: RRULE string from ICS
+            dtstart: Event start time
+            dtend: Event end time
+            event_tz: Event timezone
+            horizon_days: How many days into the future to expand
+
+        Returns:
+            List of occurrence dicts with start_ts and end_ts
+        """
+        if not rrulestr:
+            return []
+
+        try:
+            # Calculate duration
+            duration = dtend - dtstart if dtend else timedelta(hours=1)
+
+            # Build the rule
+            rule = rrulestr(rrule_str, dtstart=dtstart)
+
+            # Calculate horizon
+            if pytz:
+                now = datetime.now(pytz.UTC)
+            else:
+                now = datetime.utcnow()
+
+            if event_tz and hasattr(now, 'astimezone'):
+                now = now.astimezone(event_tz)
+
+            horizon = now + timedelta(days=horizon_days)
+
+            # Expand occurrences
+            occurrences = []
+            for occurrence in rule.between(now, horizon, inc=True):
+                # Ensure timezone-aware
+                if event_tz and occurrence.tzinfo is None:
+                    if hasattr(event_tz, 'localize'):
+                        occurrence = event_tz.localize(occurrence)
+                    else:
+                        occurrence = occurrence.replace(tzinfo=event_tz)
+
+                occurrences.append({
+                    "start_ts": occurrence,
+                    "end_ts": occurrence + duration
+                })
+
+            logger.debug(
+                "Expanded RRULE",
+                rule=rrule_str[:50],
+                occurrences=len(occurrences),
+                horizon_days=horizon_days
+            )
+
+            return occurrences
+
+        except Exception as e:
+            logger.error("Failed to expand RRULE", error=str(e), rule=rrule_str[:100])
+            return []
 
     def _parse_body(self, body: str) -> Dict[str, Any]:
         """Parse email body for maintenance data."""

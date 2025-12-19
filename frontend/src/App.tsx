@@ -8,6 +8,9 @@ import MaintenancePage from './pages/MaintenancePage'
 import QuarantinePage from './pages/QuarantinePage'
 import AdminPage from './pages/AdminPage'
 import DashboardPage from './pages/DashboardPage'
+import KnowledgeBasePage from './pages/KnowledgeBasePage'
+import DocumentsPage from './pages/DocumentsPage'
+import HistoryPage from './pages/HistoryPage'
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const isAuthenticated = useAuthStore((state) => state.isAuthenticated)
@@ -38,6 +41,9 @@ function App() {
         <Route path="incidents/:id" element={<IncidentDetailPage />} />
         <Route path="maintenance" element={<MaintenancePage />} />
         <Route path="quarantine" element={<QuarantinePage />} />
+        <Route path="knowledge" element={<KnowledgeBasePage />} />
+        <Route path="documents" element={<DocumentsPage />} />
+        <Route path="history" element={<HistoryPage />} />
         <Route path="admin" element={<AdminPage />} />
       </Route>
 
