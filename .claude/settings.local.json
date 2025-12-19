@@ -15,7 +15,9 @@
       "WebSearch",
       "Bash(docker ps:*)",
       "Bash(cat:*)",
-      "Bash(dir:*)"
+      "Bash(dir:*)",
+      "Bash(docker inspect:*)",
+      "Bash(tar xf:*)"
     ],
     "deny": [],
     "ask": []
